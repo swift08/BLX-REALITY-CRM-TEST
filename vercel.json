@@ -1,3 +1,6 @@
 {
-  "framework": "tanstack-start"
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
