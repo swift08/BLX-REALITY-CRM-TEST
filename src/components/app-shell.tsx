@@ -3,19 +3,21 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 
 import { AppSidebar } from "./app-sidebar";
 import { AppTopbar } from "./app-topbar";
+import { Watermark } from "./watermark";
+import { useSessionMonitor } from "@/hooks/use-session-monitor";
+import { securityConfig } from "@/lib/security.config";
 
-const nav = [
-  { to: "/", label: "Dashboard" },
-  { to: "/leads", label: "Leads" },
-  { to: "/followups", label: "Follow-ups" },
-  { to: "/sitevisits", label: "Site Visits" },
-  { to: "/projects", label: "Projects" },
-  { to: "/developers", label: "Developers" },
-  { to: "/inventory", label: "Inventory" },
-  { to: "/bookings", label: "Bookings" },
-  { to: "/analytics", label: "Analytics" },
-  { to: "/settings", label: "Settings" },
-] as const;
+const isRouteSensitive = (pathname: string): boolean => {
+  const sensitivePaths = [
+    "/leads",
+    "/bookings",
+    "/analytics",
+    "/payments",
+    "/reports",
+    "/settings",
+  ];
+  return sensitivePaths.some((p) => pathname.startsWith(p));
+};
 
 export function AppShell({
   title,
@@ -31,17 +33,44 @@ export function AppShell({
   const navigate = useNavigate();
   const { location } = useRouterState();
 
+  // Enforce session inactivity timeout & fingerprint binding
+  useSessionMonitor();
 
+  const isSensitive = isRouteSensitive(location.pathname);
+
+  // Sensitive View Controller: dynamic Content Protection & Auditing
+  useEffect(() => {
+    if (securityConfig.contentProtection && window.electronSecurity?.setContentProtection) {
+      window.electronSecurity.setContentProtection(isSensitive);
+    }
+
+    if (isSensitive && window.electronSecurity?.logSecurityEvent) {
+      window.electronSecurity.logSecurityEvent({
+        action: "SENSITIVE_VIEW_ENTER",
+        route: location.pathname,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    return () => {
+      if (isSensitive && window.electronSecurity?.logSecurityEvent) {
+        window.electronSecurity.logSecurityEvent({
+          action: "SENSITIVE_VIEW_EXIT",
+          route: location.pathname,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
+  }, [isSensitive, location.pathname]);
 
   // Close sidebar on mobile when navigating
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
 
-
-
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background relative">
+      {isSensitive && <Watermark />}
       <AppSidebar isOpen={sidebarOpen} />
       {sidebarOpen && (
         <div
@@ -55,9 +84,10 @@ export function AppShell({
           subtitle={subtitle}
           onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
         />
-        <main className="flex-1 p-6 space-y-6">{children}</main>
+        <main className="flex-1 p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 overflow-x-hidden">
+          {children}
+        </main>
       </div>
     </div>
   );
 }
-

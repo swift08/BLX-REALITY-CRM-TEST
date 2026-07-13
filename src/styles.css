@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
@@ -5,8 +7,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-brand: "Inter", ui-sans-serif, system-ui, sans-serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -59,14 +62,14 @@
 
   /* BLX navy brand */
   --background: oklch(0.985 0.005 250);
-  --foreground: oklch(0.20 0.04 260);
+  --foreground: oklch(0.2 0.04 260);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.20 0.04 260);
+  --card-foreground: oklch(0.2 0.04 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.20 0.04 260);
+  --popover-foreground: oklch(0.2 0.04 260);
 
-  --primary: oklch(0.24 0.07 265);            /* deep navy from logo */
+  --primary: oklch(0.24 0.07 265); /* deep navy from logo */
   --primary-foreground: oklch(0.985 0.005 250);
   --primary-soft: oklch(0.94 0.025 260);
 
@@ -91,7 +94,7 @@
   --hot-foreground: oklch(0.99 0 0);
   --warm: oklch(0.75 0.16 60);
   --warm-foreground: oklch(0.22 0.05 260);
-  --cold: oklch(0.65 0.10 240);
+  --cold: oklch(0.65 0.1 240);
   --cold-foreground: oklch(0.99 0 0);
 
   --border: oklch(0.92 0.01 255);
@@ -100,34 +103,34 @@
 
   --chart-1: oklch(0.24 0.07 265);
   --chart-2: oklch(0.55 0.12 255);
-  --chart-3: oklch(0.70 0.10 235);
+  --chart-3: oklch(0.7 0.1 235);
   --chart-4: oklch(0.65 0.15 155);
   --chart-5: oklch(0.75 0.16 60);
 
-  --sidebar: oklch(0.20 0.05 263);
+  --sidebar: oklch(0.2 0.05 263);
   --sidebar-foreground: oklch(0.92 0.01 255);
   --sidebar-primary: oklch(0.99 0 0);
   --sidebar-primary-foreground: oklch(0.24 0.07 265);
   --sidebar-accent: oklch(0.26 0.06 263);
   --sidebar-accent-foreground: oklch(0.99 0 0);
-  --sidebar-border: oklch(0.30 0.05 263);
+  --sidebar-border: oklch(0.3 0.05 263);
   --sidebar-ring: oklch(0.55 0.12 255);
 }
 
 .dark {
   --background: oklch(0.16 0.04 263);
   --foreground: oklch(0.97 0.01 255);
-  --card: oklch(0.20 0.05 263);
+  --card: oklch(0.2 0.05 263);
   --card-foreground: oklch(0.97 0.01 255);
-  --popover: oklch(0.20 0.05 263);
+  --popover: oklch(0.2 0.05 263);
   --popover-foreground: oklch(0.97 0.01 255);
   --primary: oklch(0.92 0.02 255);
-  --primary-foreground: oklch(0.20 0.05 263);
+  --primary-foreground: oklch(0.2 0.05 263);
   --primary-soft: oklch(0.28 0.05 263);
   --secondary: oklch(0.26 0.05 263);
   --secondary-foreground: oklch(0.97 0.01 255);
   --muted: oklch(0.26 0.05 263);
-  --muted-foreground: oklch(0.70 0.03 258);
+  --muted-foreground: oklch(0.7 0.03 258);
   --accent: oklch(0.28 0.06 263);
   --accent-foreground: oklch(0.97 0.01 255);
   --border: oklch(1 0 0 / 10%);
@@ -147,7 +150,8 @@
   * {
     border-color: var(--color-border);
   }
-  html, body {
+  html,
+  body {
     font-family: var(--font-sans);
   }
   body {
@@ -155,8 +159,91 @@
     color: var(--color-foreground);
     -webkit-font-smoothing: antialiased;
   }
-  h1, h2, h3, h4, h5 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5 {
     font-family: var(--font-display);
     letter-spacing: -0.02em;
   }
+}
+
+/* Glassmorphism helpers for light and dark modes */
+.card-glass {
+  background-color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(226, 232, 240, 0.5);
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.05),
+    0 4px 6px -2px rgba(0, 0, 0, 0.02);
+  backdrop-filter: blur(12px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark .card-glass {
+  background-color: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.2),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.card-glass:hover {
+  border-color: rgba(226, 232, 240, 0.8);
+}
+
+.dark .card-glass:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Scrollbar styling for a cleaner dashboard */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ─── Mobile Responsive Utilities ─────────────────────────── */
+
+/* Tables scroll on small screens */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Touch-friendly minimum tap target */
+@media (max-width: 640px) {
+  button,
+  a[role="button"] {
+    min-height: 36px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+}
+
+/* Ensure dialogs don't overflow on mobile */
+@media (max-width: 640px) {
+  [data-radix-dialog-content] {
+    max-height: 90vh;
+    overflow-y: auto;
+    margin: 1rem;
+    width: calc(100vw - 2rem) !important;
+    max-width: none !important;
+  }
+}
+
+/* Settings tab bar scrolls on mobile */
+.tab-bar-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tab-bar-scroll::-webkit-scrollbar {
+  display: none;
 }

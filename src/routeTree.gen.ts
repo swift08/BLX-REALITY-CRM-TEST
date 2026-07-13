@@ -11,13 +11,17 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitevisitsRouteImport } from './routes/sitevisits'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as FollowupsRouteImport } from './routes/followups'
 import { Route as DevelopersRouteImport } from './routes/developers'
+import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as BookingsRouteImport } from './routes/bookings'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuditlogsRouteImport } from './routes/auditlogs'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -31,9 +35,19 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaymentsRoute = PaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LeadsRoute = LeadsRouteImport.update({
@@ -56,6 +70,11 @@ const DevelopersRoute = DevelopersRouteImport.update({
   path: '/developers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CalendarRoute = CalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BookingsRoute = BookingsRouteImport.update({
   id: '/bookings',
   path: '/bookings',
@@ -64,6 +83,11 @@ const BookingsRoute = BookingsRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuditlogsRoute = AuditlogsRouteImport.update({
+  id: '/auditlogs',
+  path: '/auditlogs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AnalyticsRoute = AnalyticsRouteImport.update({
@@ -80,26 +104,34 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/auditlogs': typeof AuditlogsRoute
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
+  '/calendar': typeof CalendarRoute
   '/developers': typeof DevelopersRoute
   '/followups': typeof FollowupsRoute
   '/inventory': typeof InventoryRoute
   '/leads': typeof LeadsRoute
+  '/payments': typeof PaymentsRoute
   '/projects': typeof ProjectsRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/auditlogs': typeof AuditlogsRoute
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
+  '/calendar': typeof CalendarRoute
   '/developers': typeof DevelopersRoute
   '/followups': typeof FollowupsRoute
   '/inventory': typeof InventoryRoute
   '/leads': typeof LeadsRoute
+  '/payments': typeof PaymentsRoute
   '/projects': typeof ProjectsRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
 }
@@ -107,13 +139,17 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/auditlogs': typeof AuditlogsRoute
   '/auth': typeof AuthRoute
   '/bookings': typeof BookingsRoute
+  '/calendar': typeof CalendarRoute
   '/developers': typeof DevelopersRoute
   '/followups': typeof FollowupsRoute
   '/inventory': typeof InventoryRoute
   '/leads': typeof LeadsRoute
+  '/payments': typeof PaymentsRoute
   '/projects': typeof ProjectsRoute
+  '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
 }
@@ -122,39 +158,51 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/analytics'
+    | '/auditlogs'
     | '/auth'
     | '/bookings'
+    | '/calendar'
     | '/developers'
     | '/followups'
     | '/inventory'
     | '/leads'
+    | '/payments'
     | '/projects'
+    | '/reports'
     | '/settings'
     | '/sitevisits'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/analytics'
+    | '/auditlogs'
     | '/auth'
     | '/bookings'
+    | '/calendar'
     | '/developers'
     | '/followups'
     | '/inventory'
     | '/leads'
+    | '/payments'
     | '/projects'
+    | '/reports'
     | '/settings'
     | '/sitevisits'
   id:
     | '__root__'
     | '/'
     | '/analytics'
+    | '/auditlogs'
     | '/auth'
     | '/bookings'
+    | '/calendar'
     | '/developers'
     | '/followups'
     | '/inventory'
     | '/leads'
+    | '/payments'
     | '/projects'
+    | '/reports'
     | '/settings'
     | '/sitevisits'
   fileRoutesById: FileRoutesById
@@ -162,13 +210,17 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRoute
+  AuditlogsRoute: typeof AuditlogsRoute
   AuthRoute: typeof AuthRoute
   BookingsRoute: typeof BookingsRoute
+  CalendarRoute: typeof CalendarRoute
   DevelopersRoute: typeof DevelopersRoute
   FollowupsRoute: typeof FollowupsRoute
   InventoryRoute: typeof InventoryRoute
   LeadsRoute: typeof LeadsRoute
+  PaymentsRoute: typeof PaymentsRoute
   ProjectsRoute: typeof ProjectsRoute
+  ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SitevisitsRoute: typeof SitevisitsRoute
 }
@@ -189,11 +241,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects': {
       id: '/projects'
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payments': {
+      id: '/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof PaymentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/leads': {
@@ -224,6 +290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevelopersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/calendar': {
+      id: '/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bookings': {
       id: '/bookings'
       path: '/bookings'
@@ -236,6 +309,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auditlogs': {
+      id: '/auditlogs'
+      path: '/auditlogs'
+      fullPath: '/auditlogs'
+      preLoaderRoute: typeof AuditlogsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/analytics': {
@@ -258,13 +338,17 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRoute,
+  AuditlogsRoute: AuditlogsRoute,
   AuthRoute: AuthRoute,
   BookingsRoute: BookingsRoute,
+  CalendarRoute: CalendarRoute,
   DevelopersRoute: DevelopersRoute,
   FollowupsRoute: FollowupsRoute,
   InventoryRoute: InventoryRoute,
   LeadsRoute: LeadsRoute,
+  PaymentsRoute: PaymentsRoute,
   ProjectsRoute: ProjectsRoute,
+  ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SitevisitsRoute: SitevisitsRoute,
 }
