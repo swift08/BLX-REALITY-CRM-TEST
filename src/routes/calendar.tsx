@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useCalendarEvents, addCalendarEvent, useCustomers, useFollowups, useCRMUsers } from "@/lib/queries";
+import { useCalendarEvents, addCalendarEvent, useCustomers, useFollowups, useCRMUsers, addMockLead } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import {
@@ -120,17 +120,50 @@ function BusinessCalendar() {
     }
 
     try {
+      let finalCustomerId = customerId;
+      if (customerId) {
+        // Find if this customerId exists in the customers list
+        const exists = customers.some((c) => c.id === customerId);
+        if (!exists) {
+          // It's a sales person's user ID or fallback name!
+          // Let's check if there is an existing customer profile with the same name/email
+          const spUser = crmUsers.find((u) => u.id === customerId);
+          const spName = spUser ? spUser.name : customerId;
+          const spEmail = spUser ? spUser.email : `${customerId.toLowerCase()}@blxreality.com`;
+
+          const matchedCust = customers.find(
+            (c) => c.name.toLowerCase() === spName.toLowerCase() || 
+                   c.email?.toLowerCase() === spEmail.toLowerCase()
+          );
+
+          if (matchedCust) {
+            finalCustomerId = matchedCust.id;
+          } else {
+            // Let's create a customer profile for this sales person
+            const newCust = await addMockLead({
+              name: spName,
+              phone: "0000000000",
+              email: spEmail,
+              source: "System",
+              project_id: "none",
+            });
+            finalCustomerId = newCust.id;
+          }
+        }
+      }
+
       await addCalendarEvent({
         type,
         title,
         start,
         end,
-        customerId: customerId || undefined,
+        customerId: finalCustomerId || undefined,
         salesPerson: salesPerson || undefined,
         details: details || undefined,
       });
 
       queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["leads"] }); // Invalidate leads so it updates the customers list
       toast.success("Calendar Event successfully scheduled!");
       setIsOpen(false);
 
@@ -311,11 +344,20 @@ function BusinessCalendar() {
                           className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none"
                         >
                           <option value="">-- Optional --</option>
-                          {customers.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} ({c.phone})
-                            </option>
-                          ))}
+                          {salesPeople.length > 0 ? (
+                            salesPeople.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name} ({u.email})
+                              </option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="Dev">Dev (dev@blxreality.com)</option>
+                              <option value="Vishal">Vishal (vishal@blxreality.com)</option>
+                              <option value="Manoj">Manoj (manoj@blxreality.com)</option>
+                              <option value="Tejasvi">Tejasvi (tejasvijois@blxreality.com)</option>
+                            </>
+                          )}
                         </select>
                       </div>
                     )}
