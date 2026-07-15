@@ -135,7 +135,7 @@ export function useAuth(): AuthState & {
           console.error("Change role error:", e);
         }
       }
-      window.location.reload();
+      window.location.href = "/";
     },
     [syncAuth],
   );
