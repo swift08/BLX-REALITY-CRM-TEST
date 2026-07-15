@@ -172,7 +172,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 z-30 w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transform transition-transform ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:static md:block`}
+        className={`fixed inset-y-0 left-0 z-30 w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transform transition-transform ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:sticky md:top-0 md:h-screen md:flex`}
       >
         <div className="flex items-center gap-3 px-5 h-16 border-b border-sidebar-border">
           <div className="h-9 w-9 rounded-lg bg-white grid place-items-center overflow-hidden border">
