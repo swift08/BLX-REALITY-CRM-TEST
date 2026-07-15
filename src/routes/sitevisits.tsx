@@ -67,9 +67,9 @@ function CalendarPage() {
     };
   });
 
-  // Format calendar site visits list (type: visit)
+  // Format calendar site visits list (type: visit or meeting)
   const calVisits = calendarEvents
-    .filter((e) => e.type === "visit")
+    .filter((e) => e.type === "visit" || e.type === "meeting")
     .map((e) => {
       const lead = leads.find((l) => l.id === e.customerId);
       return {
