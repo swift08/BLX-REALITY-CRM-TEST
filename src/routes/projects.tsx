@@ -81,6 +81,39 @@ function ProjectsPage() {
     "brochures" | "floor_plans" | "documents" | "gallery_images"
   >("brochures");
   const [newFileUrl, setNewFileUrl] = useState("");
+  const [fileSizeMb, setFileSizeMb] = useState<number>(0);
+
+  const handleLocalFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const sizeInMb = file.size / (1024 * 1024);
+    if (sizeInMb > 10) {
+      toast.error("File size cannot exceed 10 MB limit.");
+      return;
+    }
+
+    setFileSizeMb(Math.round(sizeInMb * 100) / 100);
+    setNewFileName(file.name.split(".").slice(0, -1).join("."));
+    
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "")) {
+      setNewFileCategory("gallery_images");
+    } else if (["pdf"].includes(ext || "")) {
+      setNewFileCategory("brochures");
+    } else {
+      setNewFileCategory("documents");
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        setNewFileUrl(event.target.result as string);
+        toast.success(`File "${file.name}" loaded successfully! Click Attach to save.`);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,13 +188,18 @@ function ProjectsPage() {
 
     setBusy(true);
     try {
+      let formattedUrl = newFileUrl.trim();
+      if (!formattedUrl.startsWith("data:") && !/^https?:\/\//i.test(formattedUrl)) {
+        formattedUrl = "https://" + formattedUrl;
+      }
+
       const categoryList = selectedProj[newFileCategory] || [];
       const updatedList = [
         ...categoryList,
         {
           name: newFileName,
-          url: newFileUrl,
-          size: Math.floor(Math.random() * 8) + 1,
+          url: formattedUrl,
+          size: fileSizeMb || Math.floor(Math.random() * 8) + 1,
         },
       ];
 
@@ -177,6 +215,7 @@ function ProjectsPage() {
       toast.success("Project file attached successfully!");
       setNewFileName("");
       setNewFileUrl("");
+      setFileSizeMb(0);
       qc.invalidateQueries({ queryKey: ["projects"] });
     } catch (err: any) {
       toast.error(err.message || "Failed to catalog file");
@@ -524,9 +563,23 @@ function ProjectsPage() {
                   </select>
                 </div>
                 <div className="col-span-12 md:col-span-3 space-y-1">
-                  <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-                    URL Link *
-                  </Label>
+                  <div className="flex flex-row justify-between items-center">
+                    <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                      URL Link *
+                    </Label>
+                    <label
+                      htmlFor="proj-file-upload-input"
+                      className="text-[9px] font-bold text-primary hover:underline cursor-pointer flex items-center gap-0.5"
+                    >
+                      📎 Upload File
+                    </label>
+                  </div>
+                  <input
+                    type="file"
+                    id="proj-file-upload-input"
+                    className="hidden"
+                    onChange={handleLocalFileUpload}
+                  />
                   <Input
                     required
                     placeholder="https://example.com/layout.pdf"
@@ -576,9 +629,17 @@ function ProjectsPage() {
                           <span className="flex items-center gap-2">
                             <a
                               href={f.url}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const url = f.url.startsWith("http") || f.url.startsWith("data:")
+                                  ? f.url
+                                  : "https://" + f.url;
+                                window.open(url, "_blank");
+                              }}
                               target="_blank"
                               rel="noreferrer"
-                              className="p-1 rounded text-primary hover:bg-primary/5"
+                              className="p-1 rounded text-primary hover:bg-primary/5 cursor-pointer"
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
                             </a>

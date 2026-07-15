@@ -3,7 +3,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useFollowups, useLeads, useCalendarEvents } from "@/lib/queries";
+import { useFollowups, useLeads, useCalendarEvents, useCRMUsers } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Calendar as CalendarIcon,
@@ -28,8 +28,14 @@ function CalendarPage() {
   const { data: followups = [], isLoading } = useFollowups();
   const { data: leads = [] } = useLeads();
   const { data: calendarEvents = [] } = useCalendarEvents();
+  const { data: crmUsers = [] } = useCRMUsers();
   const [currentView, setCurrentView] = useState<CalendarView>("agenda");
   const [selectedDate, setSelectedDate] = useState(new Date());
+
+  const [simulateSalesPerson, setSimulateSalesPerson] = useState<string>("all");
+  const salesPeople = crmUsers.filter((u) => u.role === "sales_executive");
+  const originalRole = user?.user_metadata?.role || "sales_executive";
+  const isSimulating = role === "sales_executive" && originalRole !== "sales_executive";
 
   const getEventIcon = (title: string) => {
     const t = title.toLowerCase();
@@ -90,6 +96,10 @@ function CalendarPage() {
   const events = allEvents
     .filter((ev) => {
       if (role === "sales_executive") {
+        if (isSimulating) {
+          if (simulateSalesPerson === "all") return true;
+          return ev.assigned_sales?.toLowerCase() === simulateSalesPerson?.toLowerCase();
+        }
         return ev.assigned_sales?.toLowerCase() === userFullName?.toLowerCase();
       }
       return true;
@@ -116,6 +126,23 @@ function CalendarPage() {
       title="Site Visits & Meetings Calendar"
       subtitle="Synchronized schedules for leads visits, callbacks and virtual tours"
     >
+      {isSimulating && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg text-xs text-amber-500 font-semibold mb-4 text-left">
+          <span>Simulating Sales Executive Perspective. Filter by Sales Owner:</span>
+          <select
+            value={simulateSalesPerson}
+            onChange={(e) => setSimulateSalesPerson(e.target.value)}
+            className="bg-card text-foreground border border-border rounded px-2 py-1 font-bold focus:outline-none text-[11px]"
+          >
+            <option value="all">-- Show All Sales Owners --</option>
+            {salesPeople.map((u) => (
+              <option key={u.id} value={u.name}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       {/* Calendar Header Controls */}
       <div className="flex items-center justify-between flex-wrap gap-4 pb-2">
         <div className="flex items-center gap-2">
