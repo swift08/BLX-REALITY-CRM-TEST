@@ -433,6 +433,19 @@ function ProjectsPage() {
                     files
                   </span>
                 </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs font-semibold h-8 rounded-lg mt-1 gap-1.5 flex items-center justify-center border-primary/20 hover:border-primary/50 hover:bg-primary/5 text-primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditOpen(p);
+                  }}
+                >
+                  <FolderGit2 className="h-3.5 w-3.5" />
+                  {can(role).editProject() ? "Manage Workspace" : "View Workspace & Files"}
+                </Button>
               </CardContent>
             </Card>
           ))
@@ -462,6 +475,7 @@ function ProjectsPage() {
                   <Input
                     id="epname"
                     required
+                    disabled={!can(role).editProject()}
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                   />
@@ -470,6 +484,7 @@ function ProjectsPage() {
                   <Label>Developer / Builder *</Label>
                   <Select
                     value={editForm.developer_id}
+                    disabled={!can(role).editProject()}
                     onValueChange={(v) => setEditForm({ ...editForm, developer_id: v })}
                   >
                     <SelectTrigger>
@@ -488,6 +503,7 @@ function ProjectsPage() {
                   <Label htmlFor="eploc">Project Location</Label>
                   <Input
                     id="eploc"
+                    disabled={!can(role).editProject()}
                     value={editForm.location}
                     onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
                   />
@@ -498,6 +514,7 @@ function ProjectsPage() {
                     <Input
                       id="eptot"
                       type="number"
+                      disabled={!can(role).editProject()}
                       value={editForm.total_units}
                       onChange={(e) =>
                         setEditForm({ ...editForm, total_units: Number(e.target.value) })
@@ -509,6 +526,7 @@ function ProjectsPage() {
                     <Input
                       id="epavail"
                       type="number"
+                      disabled={!can(role).editProject()}
                       value={editForm.available_units}
                       onChange={(e) =>
                         setEditForm({ ...editForm, available_units: Number(e.target.value) })
@@ -520,108 +538,113 @@ function ProjectsPage() {
                   <Label htmlFor="epprice">Price Configuration Range</Label>
                   <Input
                     id="epprice"
+                    disabled={!can(role).editProject()}
                     value={editForm.price_range}
                     onChange={(e) => setEditForm({ ...editForm, price_range: e.target.value })}
                   />
                 </div>
-                <div className="flex justify-end pt-2">
-                  <Button type="submit" disabled={busy}>
-                    {busy ? "Updating..." : "Save Listing Details"}
-                  </Button>
-                </div>
+                {can(role).editProject() && (
+                  <div className="flex justify-end pt-2">
+                    <Button type="submit" disabled={busy}>
+                      {busy ? "Updating..." : "Save Listing Details"}
+                    </Button>
+                  </div>
+                )}
               </form>
             </TabsContent>
 
             <TabsContent value="documents" className="space-y-4 py-4 text-left">
               {/* Document Adder Form */}
-              <form
-                onSubmit={handleAddFile}
-                className="bg-muted/30 p-3 rounded-lg border border-border/50 grid grid-cols-12 gap-3 items-end"
-              >
-                <div className="col-span-12 md:col-span-4 space-y-1">
-                  <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-                    File Label *
-                  </Label>
-                  <Input
-                    required
-                    placeholder="e.g. 3 BHK Typical Layout Plan"
-                    value={newFileName}
-                    onChange={(e) => setNewFileName(e.target.value)}
-                    className="h-8 text-xs bg-background"
-                  />
-                </div>
-                <div className="col-span-12 md:col-span-3 space-y-1">
-                  <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-                    Category
-                  </Label>
-                  <select
-                    value={newFileCategory}
-                    onChange={(e: any) => setNewFileCategory(e.target.value)}
-                    className="w-full h-8 px-2 rounded border bg-background text-xs focus:outline-none font-semibold"
-                  >
-                    <option value="brochures">Brochure</option>
-                    <option value="floor_plans">Floor Plan</option>
-                    <option value="gallery_images">Gallery Image</option>
-                    <option value="documents">Project Document</option>
-                  </select>
-                </div>
-                <div className="col-span-12 md:col-span-3 space-y-1">
-                  <div className="flex flex-row justify-between items-center">
+              {can(role).editProject() && (
+                <form
+                  onSubmit={handleAddFile}
+                  className="bg-muted/30 p-3 rounded-lg border border-border/50 grid grid-cols-12 gap-3 items-end font-sans"
+                >
+                  <div className="col-span-12 md:col-span-4 space-y-1">
                     <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-                      URL Link *
+                      File Label *
                     </Label>
-                    <label
-                      htmlFor="proj-file-upload-input"
-                      className="text-[9px] font-bold text-primary hover:underline cursor-pointer flex items-center gap-0.5"
-                    >
-                      📎 Upload File
-                    </label>
-                  </div>
-                  <input
-                    type="file"
-                    id="proj-file-upload-input"
-                    className="hidden"
-                    onChange={handleLocalFileUpload}
-                  />
-                  {uploadedFileName ? (
-                    <div className="relative flex items-center justify-between h-8 px-2.5 rounded border border-input bg-card text-xs font-semibold text-emerald-500">
-                      <span className="truncate pr-4 flex items-center gap-1 font-sans">
-                        📎 {uploadedFileName}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUploadedFileName("");
-                          setNewFileUrl("");
-                          setFileSizeMb(0);
-                        }}
-                        className="text-rose-500 hover:text-rose-700 font-bold ml-1 text-sm absolute right-2.5 cursor-pointer"
-                        title="Remove file"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
                     <Input
                       required
-                      placeholder="https://example.com/layout.pdf"
-                      value={newFileUrl}
-                      onChange={(e) => setNewFileUrl(e.target.value)}
+                      placeholder="e.g. 3 BHK Typical Layout Plan"
+                      value={newFileName}
+                      onChange={(e) => setNewFileName(e.target.value)}
                       className="h-8 text-xs bg-background"
                     />
-                  )}
-                </div>
-                <div className="col-span-12 md:col-span-2">
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={busy}
-                    className="w-full h-8 text-xs font-semibold gap-1"
-                  >
-                    <Paperclip className="h-3.5 w-3.5" /> Attach
-                  </Button>
-                </div>
-              </form>
+                  </div>
+                  <div className="col-span-12 md:col-span-3 space-y-1">
+                    <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                      Category
+                    </Label>
+                    <select
+                      value={newFileCategory}
+                      onChange={(e: any) => setNewFileCategory(e.target.value)}
+                      className="w-full h-8 px-2 rounded border bg-background text-xs focus:outline-none font-semibold"
+                    >
+                      <option value="brochures">Brochure</option>
+                      <option value="floor_plans">Floor Plan</option>
+                      <option value="gallery_images">Gallery Image</option>
+                      <option value="documents">Project Document</option>
+                    </select>
+                  </div>
+                  <div className="col-span-12 md:col-span-3 space-y-1">
+                    <div className="flex flex-row justify-between items-center">
+                      <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                        URL Link *
+                      </Label>
+                      <label
+                        htmlFor="proj-file-upload-input"
+                        className="text-[9px] font-bold text-primary hover:underline cursor-pointer flex items-center gap-0.5"
+                      >
+                        📎 Upload File
+                      </label>
+                    </div>
+                    <input
+                      type="file"
+                      id="proj-file-upload-input"
+                      className="hidden"
+                      onChange={handleLocalFileUpload}
+                    />
+                    {uploadedFileName ? (
+                      <div className="relative flex items-center justify-between h-8 px-2.5 rounded border border-input bg-card text-xs font-semibold text-emerald-500">
+                        <span className="truncate pr-4 flex items-center gap-1 font-sans">
+                          📎 {uploadedFileName}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadedFileName("");
+                            setNewFileUrl("");
+                            setFileSizeMb(0);
+                          }}
+                          className="text-rose-500 hover:text-rose-700 font-bold ml-1 text-sm absolute right-2.5 cursor-pointer"
+                          title="Remove file"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <Input
+                        required
+                        placeholder="https://example.com/layout.pdf"
+                        value={newFileUrl}
+                        onChange={(e) => setNewFileUrl(e.target.value)}
+                        className="h-8 text-xs bg-background"
+                      />
+                    )}
+                  </div>
+                  <div className="col-span-12 md:col-span-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={busy}
+                      className="w-full h-8 text-xs font-semibold gap-1"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" /> Attach
+                    </Button>
+                  </div>
+                </form>
+              )}
 
               {/* Roster of Files */}
               <div className="space-y-3 mt-4 max-h-60 overflow-y-auto pr-1">
@@ -666,14 +689,16 @@ function ProjectsPage() {
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
                             </a>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-destructive hover:bg-destructive/5 hover:text-destructive"
-                              onClick={() => handleDeleteFile(cat, idx)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            {can(role).editProject() && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:bg-destructive/5 hover:text-destructive"
+                                onClick={() => handleDeleteFile(cat, idx)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </span>
                         </div>
                       ))}
