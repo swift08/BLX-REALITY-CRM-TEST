@@ -3,7 +3,8 @@ import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useFollowups, useLeads } from "@/lib/queries";
+import { useFollowups, useLeads, useCalendarEvents } from "@/lib/queries";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Calendar as CalendarIcon,
   Phone,
@@ -23,8 +24,10 @@ export const Route = createFileRoute("/sitevisits")({
 type CalendarView = "month" | "week" | "agenda";
 
 function CalendarPage() {
+  const { user, role } = useAuth();
   const { data: followups = [], isLoading } = useFollowups();
   const { data: leads = [] } = useLeads();
+  const { data: calendarEvents = [] } = useCalendarEvents();
   const [currentView, setCurrentView] = useState<CalendarView>("agenda");
   const [selectedDate, setSelectedDate] = useState(new Date());
 
@@ -46,20 +49,50 @@ function CalendarPage() {
     return "bg-amber-500/10 text-amber-500 border-amber-500/20";
   };
 
-  // Format events lists
-  const events = followups
-    .map((f) => {
-      const lead = leads.find((l) => l.id === f.lead_id);
+  const userFullName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "";
+
+  // Format followups site visits list
+  const followupEvents = followups.map((f) => {
+    const lead = leads.find((l) => l.id === f.lead_id);
+    return {
+      id: f.id,
+      leadId: f.lead_id,
+      customer: f.customer_name,
+      title: f.title,
+      time: new Date(f.time),
+      priority: f.priority,
+      status: f.status,
+      project: lead?.projects?.name || "Koramangala Project",
+      assigned_sales: f.assigned_sales || "Unassigned",
+    };
+  });
+
+  // Format calendar site visits list (type: visit)
+  const calVisits = calendarEvents
+    .filter((e) => e.type === "visit")
+    .map((e) => {
+      const lead = leads.find((l) => l.id === e.customerId);
       return {
-        id: f.id,
-        leadId: f.lead_id,
-        customer: f.customer_name,
-        title: f.title,
-        time: new Date(f.time),
-        priority: f.priority,
-        status: f.status,
+        id: e.id,
+        leadId: e.customerId || "",
+        customer: lead ? lead.name : "Unknown Customer",
+        title: e.title,
+        time: new Date(e.start),
+        priority: "medium",
+        status: "pending",
         project: lead?.projects?.name || "Koramangala Project",
+        assigned_sales: e.salesPerson || "Unassigned",
       };
+    });
+
+  // Merge and filter by role assignment
+  const allEvents = [...followupEvents, ...calVisits];
+  const events = allEvents
+    .filter((ev) => {
+      if (role === "sales_executive") {
+        return ev.assigned_sales?.toLowerCase() === userFullName?.toLowerCase();
+      }
+      return true;
     })
     .sort((a, b) => a.time.getTime() - b.time.getTime());
 

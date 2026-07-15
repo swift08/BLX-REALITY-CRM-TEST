@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useCalendarEvents, addCalendarEvent, useCustomers, useFollowups } from "@/lib/queries";
+import { useCalendarEvents, addCalendarEvent, useCustomers, useFollowups, useCRMUsers } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import {
@@ -50,6 +50,8 @@ function BusinessCalendar() {
   const queryClient = useQueryClient();
   const { data: events = [], isLoading } = useCalendarEvents();
   const { data: customers = [] } = useCustomers();
+  const { data: crmUsers = [] } = useCRMUsers();
+  const salesPeople = crmUsers.filter((u) => u.role === "sales_executive");
 
   // Dialog & Form State
   const [isOpen, setIsOpen] = useState(false);
@@ -62,6 +64,10 @@ function BusinessCalendar() {
   const [customerId, setCustomerId] = useState("");
   const [salesPerson, setSalesPerson] = useState("");
   const [details, setDetails] = useState("");
+
+  // View Event Details Dialog State
+  const [selectedEventForView, setSelectedEventForView] = useState<any | null>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
 
   // Filters State
   const [filterType, setFilterType] = useState<string>("all");
@@ -159,6 +165,17 @@ function BusinessCalendar() {
     }
   };
 
+  const handleDayClick = (dateStr: string, dayEvents: any[]) => {
+    if (dayEvents.length > 0) {
+      setSelectedEventForView(dayEvents[0]);
+      setIsViewOpen(true);
+    } else {
+      setStart(`${dateStr}T09:00`);
+      setEnd(`${dateStr}T10:00`);
+      setIsOpen(true);
+    }
+  };
+
   return (
     <AppShell
       title="Business Calendar"
@@ -232,13 +249,27 @@ function BusinessCalendar() {
                         <label className="text-xs font-semibold text-muted-foreground">
                           Sales Owner
                         </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Arjun K"
+                        <select
                           value={salesPerson}
                           onChange={(e) => setSalesPerson(e.target.value)}
                           className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                        >
+                          <option value="">-- Select Sales Owner --</option>
+                          {salesPeople.length > 0 ? (
+                            salesPeople.map((u) => (
+                              <option key={u.id} value={u.name}>
+                                {u.name} ({u.email})
+                              </option>
+                            ))
+                          ) : (
+                            <>
+                              <option value="Dev">Dev (dev@blxreality.com)</option>
+                              <option value="Vishal">Vishal (vishal@blxreality.com)</option>
+                              <option value="Manoj">Manoj (manoj@blxreality.com)</option>
+                              <option value="Tejasvi">Tejasvi (tejasvijois@blxreality.com)</option>
+                            </>
+                          )}
+                        </select>
                       </div>
                     </div>
 
@@ -342,7 +373,8 @@ function BusinessCalendar() {
                 return (
                   <div
                     key={`day-${dayNum}`}
-                    className="h-20 p-1 bg-background/50 border border-border/60 hover:bg-muted/30 rounded-lg flex flex-col justify-between transition-colors"
+                    onClick={() => handleDayClick(currentDateStr, dayEvents)}
+                    className="h-20 p-1 bg-background/50 border border-border/60 hover:bg-muted/30 rounded-lg flex flex-col justify-between transition-colors cursor-pointer"
                   >
                     <span className="text-xs font-semibold text-foreground/80 self-start">
                       {dayNum}
@@ -351,7 +383,12 @@ function BusinessCalendar() {
                       {dayEvents.slice(0, 3).map((e) => (
                         <div
                           key={e.id}
-                          className="text-[9px] px-1 rounded truncate leading-tight font-medium bg-primary/10 text-primary border border-primary/20"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            setSelectedEventForView(e);
+                            setIsViewOpen(true);
+                          }}
+                          className="text-[9px] px-1 rounded truncate leading-tight font-medium bg-primary/10 text-primary border border-primary/20 cursor-pointer hover:bg-primary/25 transition-colors"
                         >
                           {e.title}
                         </div>
@@ -435,7 +472,11 @@ function BusinessCalendar() {
                 filteredEvents.map((e) => (
                   <div
                     key={e.id}
-                    className="p-3 rounded-lg border bg-background/40 hover:bg-background/80 transition-all flex flex-col gap-1.5 shadow-sm"
+                    onClick={() => {
+                      setSelectedEventForView(e);
+                      setIsViewOpen(true);
+                    }}
+                    className="p-3 rounded-lg border bg-background/40 hover:bg-background/80 transition-all flex flex-col gap-1.5 shadow-sm cursor-pointer hover:shadow-md hover:border-primary/30"
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span
@@ -469,6 +510,89 @@ function BusinessCalendar() {
           </Card>
         </div>
       </div>
+      {/* View Event Details Dialog */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${selectedEventForView ? getEventBadgeColor(selectedEventForView.type) : ""}`}>
+                {selectedEventForView?.type}
+              </span>
+              <span>Event Details</span>
+            </DialogTitle>
+          </DialogHeader>
+          {selectedEventForView && (
+            <div className="space-y-4 pt-2 text-sm text-foreground">
+              <div className="space-y-1">
+                <div className="text-xs font-semibold text-muted-foreground">Title</div>
+                <div className="font-bold text-base leading-tight">{selectedEventForView.title}</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold text-muted-foreground">Start Time</div>
+                  <div className="flex items-center gap-1 font-medium text-xs">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    {new Date(selectedEventForView.start).toLocaleString("en-IN")}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold text-muted-foreground">End Time</div>
+                  <div className="flex items-center gap-1 font-medium text-xs">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    {new Date(selectedEventForView.end).toLocaleString("en-IN")}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold text-muted-foreground">Sales Owner</div>
+                  <div className="flex items-center gap-1 font-medium text-xs">
+                    <User className="h-3.5 w-3.5 text-muted-foreground" />
+                    {selectedEventForView.salesPerson || "Unassigned"}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold text-muted-foreground">Customer Link</div>
+                  <div className="flex items-center gap-1 font-medium text-xs">
+                    {selectedEventForView.customerId ? (
+                      (() => {
+                        const customer = customers.find(c => c.id === selectedEventForView.customerId);
+                        return customer ? (
+                          <a
+                            href={`/leads?id=${customer.id}`}
+                            className="text-primary hover:underline font-bold flex items-center gap-1"
+                          >
+                            {customer.name} ({customer.phone})
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">Linked Customer (ID: {selectedEventForView.customerId})</span>
+                        );
+                      })()
+                    ) : (
+                      <span className="text-muted-foreground">None</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {selectedEventForView.details && (
+                <div className="space-y-1 border-t pt-3">
+                  <div className="text-xs font-semibold text-muted-foreground">Additional Notes</div>
+                  <div className="text-xs leading-relaxed bg-muted/40 p-2.5 rounded-lg border whitespace-pre-wrap">
+                    {selectedEventForView.details}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-2">
+                <Button onClick={() => setIsViewOpen(false)}>Close</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
