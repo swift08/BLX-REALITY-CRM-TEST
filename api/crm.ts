@@ -646,6 +646,13 @@ export default async function handler(req: any, res: any) {
           if (Object.keys(oppUpdates).length > 0) {
             await supabase.from("opportunities").update(oppUpdates).eq("id", oldOpp.id);
           }
+          if (updates.owner !== undefined) {
+            await supabase
+              .from("followups")
+              .update({ assigned_sales: updates.owner })
+              .eq("lead_id", id)
+              .eq("status", "pending");
+          }
         }
 
         if (updates.stage && oldOpp && updates.stage !== oldOpp.stage) {
@@ -756,6 +763,11 @@ export default async function handler(req: any, res: any) {
               cust.opportunities[0];
             const oldOwner = activeOpp.owner;
             await supabase.from("opportunities").update({ owner: newOwner }).eq("id", activeOpp.id);
+            await supabase
+              .from("followups")
+              .update({ assigned_sales: newOwner })
+              .eq("lead_id", id)
+              .eq("status", "pending");
             await publishEvent(
               "OPPORTUNITY_ASSIGNED",
               id,
@@ -842,13 +854,23 @@ export default async function handler(req: any, res: any) {
         if (activity.next_followup) {
           const followupTitle =
             activity.followup_title || `Followup after ${activity.type}: ${activity.summary}`;
+
+          // Get the owner from active opportunity
+          const { data: opps } = await supabase
+            .from("opportunities")
+            .select("owner")
+            .eq("customer_id", leadId);
+          const assignedOwner = opps && opps[0] && opps[0].owner !== "Unassigned" 
+            ? opps[0].owner 
+            : actorName;
+
           await supabase.from("followups").insert({
             lead_id: leadId,
             title: followupTitle,
             time: activity.next_followup,
             priority: activity.followup_priority || "medium",
             status: "pending",
-            assigned_sales: actorName,
+            assigned_sales: assignedOwner,
           });
           await publishEvent("FOLLOWUP_CREATED", leadId, { title: followupTitle }, actorName);
         }
