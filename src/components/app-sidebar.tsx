@@ -272,7 +272,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
           </DialogHeader>
 
           <form onSubmit={handleVerifyPasswordSubmit} className="space-y-4 mt-3">
-            {filteredUsers.length > 0 && (
+            {filteredUsers.length > 0 ? (
               <div className="space-y-1.5 text-left">
                 <Label htmlFor="swap-email">Select Account</Label>
                 <select
@@ -287,6 +287,13 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
                     </option>
                   ))}
                 </select>
+              </div>
+            ) : (
+              <div className="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/25 p-2.5 rounded-lg space-y-1">
+                <div>No active {proposedRole?.replace("_", " ")} accounts found in user list.</div>
+                <div>
+                  Attempting default login for: <span className="font-bold text-foreground">{proposedRole ? (proposedRole === "super_admin" ? "nischith@blxreality.com" : proposedRole === "admin" ? "admin@blxreality.com" : proposedRole === "manager" ? "manager@blxreality.com" : "dev@blxreality.com") : ""}</span>
+                </div>
               </div>
             )}
 
