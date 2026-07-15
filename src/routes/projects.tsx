@@ -82,6 +82,7 @@ function ProjectsPage() {
   >("brochures");
   const [newFileUrl, setNewFileUrl] = useState("");
   const [fileSizeMb, setFileSizeMb] = useState<number>(0);
+  const [uploadedFileName, setUploadedFileName] = useState("");
 
   const handleLocalFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -95,6 +96,7 @@ function ProjectsPage() {
 
     setFileSizeMb(Math.round(sizeInMb * 100) / 100);
     setNewFileName(file.name.split(".").slice(0, -1).join("."));
+    setUploadedFileName(file.name);
     
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "")) {
@@ -215,6 +217,7 @@ function ProjectsPage() {
       toast.success("Project file attached successfully!");
       setNewFileName("");
       setNewFileUrl("");
+      setUploadedFileName("");
       setFileSizeMb(0);
       qc.invalidateQueries({ queryKey: ["projects"] });
     } catch (err: any) {
@@ -580,13 +583,33 @@ function ProjectsPage() {
                     className="hidden"
                     onChange={handleLocalFileUpload}
                   />
-                  <Input
-                    required
-                    placeholder="https://example.com/layout.pdf"
-                    value={newFileUrl}
-                    onChange={(e) => setNewFileUrl(e.target.value)}
-                    className="h-8 text-xs bg-background"
-                  />
+                  {uploadedFileName ? (
+                    <div className="relative flex items-center justify-between h-8 px-2.5 rounded border border-input bg-card text-xs font-semibold text-emerald-500">
+                      <span className="truncate pr-4 flex items-center gap-1 font-sans">
+                        📎 {uploadedFileName}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUploadedFileName("");
+                          setNewFileUrl("");
+                          setFileSizeMb(0);
+                        }}
+                        className="text-rose-500 hover:text-rose-700 font-bold ml-1 text-sm absolute right-2.5 cursor-pointer"
+                        title="Remove file"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <Input
+                      required
+                      placeholder="https://example.com/layout.pdf"
+                      value={newFileUrl}
+                      onChange={(e) => setNewFileUrl(e.target.value)}
+                      className="h-8 text-xs bg-background"
+                    />
+                  )}
                 </div>
                 <div className="col-span-12 md:col-span-2">
                   <Button
