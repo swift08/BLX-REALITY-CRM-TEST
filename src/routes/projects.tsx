@@ -678,10 +678,25 @@ function ProjectsPage() {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                const url = f.url.startsWith("http") || f.url.startsWith("data:")
-                                  ? f.url
-                                  : "https://" + f.url;
-                                window.open(url, "_blank");
+                                if (f.url.startsWith("data:")) {
+                                  const newTab = window.open();
+                                  if (newTab) {
+                                    newTab.document.write(
+                                      `<html><head><title>${f.name}</title></head><body style="margin:0;"><iframe src="${f.url}" width="100%" height="100%" style="border:none;"></iframe></body></html>`
+                                    );
+                                    newTab.document.close();
+                                  } else {
+                                    const link = document.createElement("a");
+                                    link.href = f.url;
+                                    link.download = f.name;
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                  }
+                                } else {
+                                  const url = f.url.startsWith("http") ? f.url : "https://" + f.url;
+                                  window.open(url, "_blank");
+                                }
                               }}
                               target="_blank"
                               rel="noreferrer"
