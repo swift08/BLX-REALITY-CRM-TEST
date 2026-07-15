@@ -301,7 +301,7 @@ export interface CRMUser {
 // ----------------------------------------------------
 // Secure API Request Helper
 // ----------------------------------------------------
-async function callApi(action: string, payload: any = {}) {
+async function callApi(action: string, payload: any = {}): Promise<any> {
   const activeRole =
     typeof window !== "undefined"
       ? localStorage.getItem("blx-realty-active-role") || "super_admin"
@@ -309,12 +309,14 @@ async function callApi(action: string, payload: any = {}) {
 
   let sessionName = "";
   let token = "";
+  let refreshToken = "";
   if (typeof window !== "undefined") {
     const rawSession = localStorage.getItem("blx-realty-session");
     if (rawSession) {
       try {
         const session = JSON.parse(rawSession);
         token = session.access_token || "";
+        refreshToken = session.refresh_token || "";
         const u = session.user;
         if (u) {
           sessionName = u.user_metadata?.full_name || u.email?.split("@")[0] || "";
@@ -325,7 +327,7 @@ async function callApi(action: string, payload: any = {}) {
     }
   }
 
-  const res = await fetch("/api/crm", {
+  let res = await fetch("/api/crm", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -336,6 +338,56 @@ async function callApi(action: string, payload: any = {}) {
       payload: { ...payload, actorRole: activeRole, actorName: sessionName },
     }),
   });
+
+  // Handle Token Expiration
+  if (res.status === 401 && action !== "refreshSession") {
+    if (refreshToken && typeof window !== "undefined") {
+      try {
+        const refreshRes = await fetch("/api/crm", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "refreshSession",
+            payload: { refreshToken },
+          }),
+        });
+
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData.session) {
+            localStorage.setItem("blx-realty-session", JSON.stringify(refreshData.session));
+            const newToken = refreshData.session.access_token;
+            
+            // Retry the original request
+            res = await fetch("/api/crm", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${newToken}`,
+              },
+              body: JSON.stringify({
+                action,
+                payload: { ...payload, actorRole: activeRole, actorName: sessionName },
+              }),
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Token refresh failed:", err);
+      }
+    }
+
+    // If still 401, redirect to login
+    if (res.status === 401 && typeof window !== "undefined") {
+      localStorage.removeItem("blx-realty-session");
+      localStorage.removeItem("blx-realty-active-role");
+      window.location.href = "/auth";
+      throw new Error("Authentication expired. Please sign in again.");
+    }
+  }
+
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "API request failed");

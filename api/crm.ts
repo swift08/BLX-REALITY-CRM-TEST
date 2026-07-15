@@ -192,7 +192,7 @@ export default async function handler(req: any, res: any) {
     const supabase = getSupabaseClient();
 
     // ─── Public actions that don't require authentication ────────────────────
-    const PUBLIC_ACTIONS = new Set(["signIn", "signUp"]);
+    const PUBLIC_ACTIONS = new Set(["signIn", "signUp", "refreshSession"]);
 
     // ─── Zero-Trust: Extract & verify identity from JWT only ─────────────────
     let actorRole: string = "sales_executive";
@@ -288,6 +288,17 @@ export default async function handler(req: any, res: any) {
     }
 
     switch (action) {
+      case "refreshSession": {
+        const { refreshToken } = payload;
+        if (!refreshToken) {
+          return res.status(400).json({ error: "Missing refresh token" });
+        }
+        const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+        if (error) {
+          return res.status(400).json({ error: error.message });
+        }
+        return res.status(200).json(data);
+      }
       case "signIn": {
         const { email, password } = payload;
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
