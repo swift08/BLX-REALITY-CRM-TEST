@@ -62,7 +62,7 @@ function CalendarPage() {
       time: new Date(f.time),
       priority: f.priority,
       status: f.status,
-      project: lead?.projects?.name || "Koramangala Project",
+      project: lead?.projects?.name || "No Project",
       assigned_sales: f.assigned_sales || "Unassigned",
     };
   });
@@ -80,7 +80,7 @@ function CalendarPage() {
         time: new Date(e.start),
         priority: "medium",
         status: "pending",
-        project: lead?.projects?.name || "Koramangala Project",
+        project: lead?.projects?.name || "No Project",
         assigned_sales: e.salesPerson || "Unassigned",
       };
     });
