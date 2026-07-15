@@ -1216,7 +1216,7 @@ function Customer360Workspace({
         customer.id,
         fileName,
         "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-        sizeNum * 1024 * 1024,
+        Math.round(sizeNum * 1024 * 1024),
         docCategory,
       );
       setFileName("");
@@ -2427,16 +2427,27 @@ function Customer360Workspace({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {projUnits
-                              .filter((u) => u.status === "available")
-                              .map((u) => (
-                                <SelectItem key={u.id} value={u.id}>
-                                  {u.unit_number} ({u.configuration} -{" "}
-                                  {(u.price / 10000000).toFixed(2)} Cr)
-                                </SelectItem>
-                              ))}
+                            {projUnits.filter((u) => u.status === "available").length === 0 ? (
+                              <SelectItem value="no_units" disabled>
+                                No available units found
+                              </SelectItem>
+                            ) : (
+                              projUnits
+                                .filter((u) => u.status === "available")
+                                .map((u) => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.unit_number} ({u.configuration} -{" "}
+                                    {(u.price / 10000000).toFixed(2)} Cr)
+                                  </SelectItem>
+                                ))
+                            )}
                           </SelectContent>
                         </Select>
+                        {projUnits.length === 0 && (
+                          <p className="text-[10px] text-amber-500 mt-1 font-medium">
+                            ⚠️ No units found. Add units in the Inventory tab.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <Button onClick={handleReserve} disabled={!selectedUnitId} className="mt-2">

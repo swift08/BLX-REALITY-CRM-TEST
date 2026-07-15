@@ -10,10 +10,11 @@ import {
   Phone,
   Video,
   MapPin,
-  Search,
   ChevronLeft,
   ChevronRight,
   Clock,
+  User,
+  Badge,
 } from "lucide-react";
 
 export const Route = createFileRoute("/sitevisits")({
@@ -37,6 +38,13 @@ function CalendarPage() {
   const originalRole = user?.user_metadata?.role || "sales_executive";
   const isSimulating = role === "sales_executive" && originalRole !== "sales_executive";
 
+  // Full name of the currently logged-in user
+  const userFullName = (
+    user?.user_metadata?.full_name ||
+    user?.email?.split("@")[0] ||
+    ""
+  ).toLowerCase().trim();
+
   const getEventIcon = (title: string) => {
     const t = title.toLowerCase();
     if (t.includes("call") || t.includes("phone"))
@@ -55,9 +63,7 @@ function CalendarPage() {
     return "bg-amber-500/10 text-amber-500 border-amber-500/20";
   };
 
-  const userFullName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "";
-
-  // Format followups site visits list
+  // ── Format followup-based events ───────────────────────────
   const followupEvents = followups.map((f) => {
     const lead = leads.find((l) => l.id === f.lead_id);
     return {
@@ -69,11 +75,12 @@ function CalendarPage() {
       priority: f.priority,
       status: f.status,
       project: lead?.projects?.name || "No Project",
-      assigned_sales: f.assigned_sales || "Unassigned",
+      assigned_sales: (f.assigned_sales || "Unassigned").toLowerCase().trim(),
+      source: "followup" as const,
     };
   });
 
-  // Format calendar site visits list (type: visit or meeting)
+  // ── Format calendar-based events (visit / meeting) ────────
   const calVisits = calendarEvents
     .filter((e) => e.type === "visit" || e.type === "meeting")
     .map((e) => {
@@ -84,29 +91,33 @@ function CalendarPage() {
         customer: lead ? lead.name : "Unknown Customer",
         title: e.title,
         time: new Date(e.start),
-        priority: "medium",
-        status: "pending",
+        priority: "medium" as const,
+        status: "pending" as const,
         project: lead?.projects?.name || "No Project",
-        assigned_sales: e.salesPerson || "Unassigned",
+        // Normalise to lowercase for consistent comparison
+        assigned_sales: (e.salesPerson || "Unassigned").toLowerCase().trim(),
+        source: "calendar" as const,
       };
     });
 
-  // Merge and filter by role assignment
+  // ── Merge & filter by role ─────────────────────────────────
   const allEvents = [...followupEvents, ...calVisits];
   const events = allEvents
     .filter((ev) => {
       if (role === "sales_executive") {
         if (isSimulating) {
           if (simulateSalesPerson === "all") return true;
-          return ev.assigned_sales?.toLowerCase() === simulateSalesPerson?.toLowerCase();
+          return ev.assigned_sales === simulateSalesPerson.toLowerCase().trim();
         }
-        return ev.assigned_sales?.toLowerCase() === userFullName?.toLowerCase();
+        // Real sales person: show only events assigned to them
+        return ev.assigned_sales === userFullName;
       }
+      // Admin / super_admin: see everything
       return true;
     })
     .sort((a, b) => a.time.getTime() - b.time.getTime());
 
-  // Filter events for selected month (simple visualization)
+  // ── Month filter ───────────────────────────────────────────
   const monthEvents = events.filter(
     (e) =>
       e.time.getMonth() === selectedDate.getMonth() &&
@@ -143,7 +154,16 @@ function CalendarPage() {
           </select>
         </div>
       )}
-      {/* Calendar Header Controls */}
+
+      {/* Sales executive notice — events assigned to them */}
+      {role === "sales_executive" && !isSimulating && (
+        <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 p-2.5 rounded-lg text-xs text-primary font-semibold mb-4">
+          <User className="h-4 w-4" />
+          Showing events assigned to you ({monthEvents.length} this month)
+        </div>
+      )}
+
+      {/* ── Calendar Header Controls ── */}
       <div className="flex items-center justify-between flex-wrap gap-4 pb-2">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={prevMonth} className="h-8 w-8 p-0">
@@ -180,19 +200,14 @@ function CalendarPage() {
       {currentView === "month" ? (
         <Card className="border-border/60">
           <CardContent className="p-6">
-            {/* Simple Visual Monthly Grid representation */}
+            {/* Month grid header */}
             <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-2">
-              <div>Sun</div>
-              <div>Mon</div>
-              <div>Tue</div>
-              <div>Wed</div>
-              <div>Thu</div>
-              <div>Fri</div>
-              <div>Sat</div>
+              <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div>
+              <div>Thu</div><div>Fri</div><div>Sat</div>
             </div>
             <div className="grid grid-cols-7 gap-2 mt-3 min-h-[300px]">
               {Array.from({ length: 35 }).map((_, idx) => {
-                const day = idx - 2; // offset to align days
+                const day = idx - 2; // rough offset
                 const isValidDay = day > 0 && day <= 31;
                 const dayDate = isValidDay
                   ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day)
@@ -246,7 +261,9 @@ function CalendarPage() {
                 <div className="p-16 text-center">
                   <CalendarIcon className="h-10 w-10 text-muted-foreground/35 mx-auto mb-3" />
                   <p className="text-xs text-muted-foreground">
-                    No events scheduled for this month.
+                    {role === "sales_executive"
+                      ? "No events assigned to you this month."
+                      : "No events scheduled for this month."}
                   </p>
                 </div>
               ) : (
@@ -271,6 +288,13 @@ function CalendarPage() {
                                 ? "Callback"
                                 : "Meeting"}
                           </span>
+                          {/* "Assigned to you" badge for admin/superadmin view */}
+                          {role !== "sales_executive" && ev.assigned_sales !== "unassigned" && (
+                            <span className="text-[9px] font-semibold bg-muted text-muted-foreground border border-border/60 px-2 py-0.25 rounded-full flex items-center gap-1">
+                              <User className="h-2.5 w-2.5" />
+                              {ev.assigned_sales}
+                            </span>
+                          )}
                         </div>
                         <h4 className="font-medium text-xs text-foreground mt-1 leading-normal">
                           {ev.title}
@@ -317,6 +341,12 @@ function CalendarPage() {
                       ).length
                     }
                   </div>
+                </div>
+                <div className="p-4 rounded-xl border bg-muted/20 space-y-1">
+                  <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                    Total This Month
+                  </div>
+                  <div className="text-xl font-bold text-foreground">{monthEvents.length}</div>
                 </div>
               </CardContent>
             </Card>

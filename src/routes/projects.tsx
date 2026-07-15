@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useProjects, useDevelopers, addProject, updateProject } from "@/lib/queries";
+import { useProjects, useDevelopers, addProject, updateProject, uploadProjectFile } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { can } from "@/lib/permissions";
 import { toast } from "sonner";
@@ -23,6 +23,11 @@ import {
   FileText,
   ExternalLink,
   Image,
+  Eye,
+  Link2,
+  X,
+  Download,
+  ZoomIn,
 } from "lucide-react";
 import {
   Dialog,
@@ -45,6 +50,195 @@ export const Route = createFileRoute("/projects")({
   head: () => ({ meta: [{ title: "Projects · BLX Realty CRM" }] }),
   component: ProjectsPage,
 });
+
+// ── Helpers ────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────
+function getFileType(url: string, name?: string): "image" | "pdf" | "external" {
+  if (!url) return "external";
+  // data: URLs
+  if (url.startsWith("data:image/")) return "image";
+  if (url.startsWith("data:application/pdf")) return "pdf";
+  // Check URL path (before query string)
+  const lower = url.toLowerCase().split("?")[0];
+  if (lower.match(/\.(png|jpg|jpeg|webp|gif|svg)$/)) return "image";
+  if (lower.match(/\.pdf$/)) return "pdf";
+  // Fall back to checking file name
+  if (name) {
+    const nameLower = name.toLowerCase();
+    if (nameLower.endsWith(".pdf")) return "pdf";
+    if (nameLower.match(/\.(png|jpg|jpeg|webp|gif|svg)$/)) return "image";
+  }
+  return "external";
+}
+
+// Google Docs Viewer URL for any public PDF
+function googleDocsViewerUrl(fileUrl: string): string {
+  return `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+}
+
+// ── File Preview Modal ─────────────────────────────────────────
+function FilePreviewModal({
+  file,
+  onClose,
+}: {
+  file: { name: string; url: string; size: number } | null;
+  onClose: () => void;
+}) {
+  const [pdfLoading, setPdfLoading] = useState(true);
+
+  if (!file) return null;
+
+  const fileType = getFileType(file.url, file.name);
+  const displayUrl = file.url.startsWith("http") ? file.url : "https://" + file.url;
+
+  // For PDFs — use Google Docs Viewer (works with any public HTTPS URL)
+  const pdfViewerSrc = file.url.startsWith("data:")
+    ? file.url          // base64 PDFs go direct
+    : googleDocsViewerUrl(displayUrl); // remote PDFs via Google Docs Viewer
+
+  // Open an uploaded (data:) file in a new tab via Blob URL
+  const openUploadedFile = () => {
+    fetch(file.url)
+      .then((r) => r.blob())
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, "_blank");
+      })
+      .catch(() => {
+        const newTab = window.open();
+        if (newTab) {
+          newTab.document.write(
+            `<html><head><title>${file.name}</title></head><body style="margin:0"><iframe src="${file.url}" width="100%" height="100%" style="border:none"></iframe></body></html>`
+          );
+          newTab.document.close();
+        }
+      });
+  };
+
+  return (
+    <Dialog open={!!file} onOpenChange={(open) => { if (!open) { onClose(); setPdfLoading(true); } }}>
+      <DialogContent className="max-w-4xl w-full p-0 overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-muted/30">
+          <div className="flex items-center gap-2 min-w-0">
+            {fileType === "image" ? (
+              <Image className="h-4 w-4 text-emerald-500 shrink-0" />
+            ) : fileType === "pdf" ? (
+              <FileText className="h-4 w-4 text-red-400 shrink-0" />
+            ) : (
+              <Link2 className="h-4 w-4 text-primary shrink-0" />
+            )}
+            <span className="font-semibold text-sm text-foreground truncate">{file.name}</span>
+            <span className="text-[10px] text-muted-foreground font-medium shrink-0">
+              ({file.size} MB)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {file.url.startsWith("data:") ? (
+              <>
+                <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={openUploadedFile}>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open File
+                </Button>
+                <a href={file.url} download={file.name}>
+                  <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </Button>
+                </a>
+              </>
+            ) : (
+              <a href={displayUrl} target="_blank" rel="noreferrer">
+                <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open Link
+                </Button>
+              </a>
+            )}
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { onClose(); setPdfLoading(true); }}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* ── URL Bar ── */}
+        <div className="px-5 py-2.5 bg-muted/20 border-b border-border/60 flex items-center gap-2">
+          <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
+            {file.url.startsWith("data:") ? "Source:" : "URL:"}
+          </span>
+          <span className="text-xs text-primary font-medium truncate break-all select-all">
+            {file.url.startsWith("data:")
+              ? `Uploaded file — ${file.name}`
+              : displayUrl}
+          </span>
+        </div>
+
+        {/* ── Preview Body ── */}
+        <div className="relative bg-background" style={{ minHeight: "480px" }}>
+
+          {/* Image */}
+          {fileType === "image" && (
+            <div className="flex items-center justify-center p-4" style={{ minHeight: "480px" }}>
+              <img
+                src={file.url}
+                alt={file.name}
+                className="max-w-full max-h-[580px] object-contain rounded-lg shadow-md border border-border/40"
+              />
+            </div>
+          )}
+
+          {/* PDF — Google Docs Viewer for remote URLs, direct iframe for data: */}
+          {fileType === "pdf" && (
+            <div className="relative" style={{ height: "580px" }}>
+              {/* Loading skeleton */}
+              {pdfLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-muted/20 z-10">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+                    <p className="text-xs font-semibold text-muted-foreground">Loading PDF viewer…</p>
+                    {!file.url.startsWith("data:") && (
+                      <p className="text-[10px] text-muted-foreground/60 text-center max-w-[240px]">
+                        Rendering via Google Docs Viewer
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+              <iframe
+                key={pdfViewerSrc}
+                src={pdfViewerSrc}
+                title={file.name}
+                className="w-full h-full border-0"
+                onLoad={() => setPdfLoading(false)}
+                style={{ opacity: pdfLoading ? 0 : 1, transition: "opacity 0.3s" }}
+              />
+            </div>
+          )}
+
+          {/* External URL — try iframe embed */}
+          {fileType === "external" && (
+            <div className="relative" style={{ height: "580px" }}>
+              <iframe
+                src={displayUrl}
+                title={file.name}
+                className="w-full h-full border-0"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
+              />
+              <div className="absolute bottom-3 right-3 bg-black/60 text-white text-[10px] px-2.5 py-1 rounded-md font-medium pointer-events-none select-none">
+                If blocked by site — use "Open Link" ↗
+              </div>
+            </div>
+          )}
+
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────
 
 function ProjectsPage() {
   const qc = useQueryClient();
@@ -83,38 +277,68 @@ function ProjectsPage() {
   const [newFileUrl, setNewFileUrl] = useState("");
   const [fileSizeMb, setFileSizeMb] = useState<number>(0);
   const [uploadedFileName, setUploadedFileName] = useState("");
+  const [isUploadingFile, setIsUploadingFile] = useState(false); // uploading to storage
 
-  const handleLocalFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── File preview modal state ──────────────────────────────
+  const [previewFile, setPreviewFile] = useState<{
+    name: string;
+    url: string;
+    size: number;
+  } | null>(null);
+
+  // Upload file to Supabase Storage → get permanent URL
+  const handleLocalFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const sizeInMb = file.size / (1024 * 1024);
-    if (sizeInMb > 10) {
-      toast.error("File size cannot exceed 10 MB limit.");
+    if (sizeInMb > 50) {
+      toast.error("File size cannot exceed 50 MB.");
       return;
     }
 
     setFileSizeMb(Math.round(sizeInMb * 100) / 100);
     setNewFileName(file.name.split(".").slice(0, -1).join("."));
     setUploadedFileName(file.name);
-    
+    setNewFileUrl(""); // clear any old URL while uploading
+
     const ext = file.name.split(".").pop()?.toLowerCase();
-    if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext || "")) {
+    if (["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(ext || "")) {
       setNewFileCategory("gallery_images");
-    } else if (["pdf"].includes(ext || "")) {
+    } else if (ext === "pdf") {
       setNewFileCategory("brochures");
     } else {
       setNewFileCategory("documents");
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setNewFileUrl(event.target.result as string);
-        toast.success(`File "${file.name}" loaded successfully! Click Attach to save.`);
-      }
-    };
-    reader.readAsDataURL(file);
+    setIsUploadingFile(true);
+    toast.loading(`Uploading "${file.name}"…`, { id: "file-upload" });
+
+    try {
+      // Read file as base64, then send to Supabase Storage via API
+      const base64: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const result = await uploadProjectFile(
+        base64,
+        file.name,
+        file.type || "application/octet-stream",
+        selectedProj?.id || "general",
+      );
+
+      setNewFileUrl(result.url); // permanent Supabase Storage URL
+      toast.success(`"${file.name}" uploaded! Click Attach to save.`, { id: "file-upload" });
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed", { id: "file-upload" });
+      setUploadedFileName("");
+      setNewFileUrl("");
+    } finally {
+      setIsUploadingFile(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -252,6 +476,14 @@ function ProjectsPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // ── Category label helper ──────────────────────────────────
+  const catLabel: Record<string, string> = {
+    brochures: "Brochures",
+    floor_plans: "Floor Plans",
+    gallery_images: "Gallery Images",
+    documents: "Project Documents",
   };
 
   return (
@@ -452,7 +684,7 @@ function ProjectsPage() {
         )}
       </div>
 
-      {/* Project Details Workspace Modal */}
+      {/* ── Project Details Workspace Modal ─────────────────── */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-2xl bg-card rounded-xl border border-border shadow-2xl p-6">
           <DialogHeader>
@@ -468,6 +700,7 @@ function ProjectsPage() {
               <TabsTrigger value="documents">Files & Visual Floor Plans</TabsTrigger>
             </TabsList>
 
+            {/* ── Listing Details Tab ── */}
             <TabsContent value="profile" className="space-y-4 py-4 text-left">
               <form onSubmit={handleUpdateProfile} className="space-y-4">
                 <div className="space-y-1.5">
@@ -553,8 +786,9 @@ function ProjectsPage() {
               </form>
             </TabsContent>
 
+            {/* ── Files Tab ── */}
             <TabsContent value="documents" className="space-y-4 py-4 text-left">
-              {/* Document Adder Form */}
+              {/* Add File Form */}
               {can(role).editProject() && (
                 <form
                   onSubmit={handleAddFile}
@@ -606,22 +840,30 @@ function ProjectsPage() {
                       onChange={handleLocalFileUpload}
                     />
                     {uploadedFileName ? (
-                      <div className="relative flex items-center justify-between h-8 px-2.5 rounded border border-input bg-card text-xs font-semibold text-emerald-500">
+                      <div className={`relative flex items-center justify-between h-8 px-2.5 rounded border text-xs font-semibold ${isUploadingFile ? "border-amber-500/40 bg-amber-500/5 text-amber-500" : newFileUrl ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-500" : "border-input bg-card text-muted-foreground"}`}>
                         <span className="truncate pr-4 flex items-center gap-1 font-sans">
-                          📎 {uploadedFileName}
+                          {isUploadingFile ? (
+                            <>⏳ Uploading…</>
+                          ) : newFileUrl ? (
+                            <>✅ {uploadedFileName}</>
+                          ) : (
+                            <>⏳ Reading…</>
+                          )}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadedFileName("");
-                            setNewFileUrl("");
-                            setFileSizeMb(0);
-                          }}
-                          className="text-rose-500 hover:text-rose-700 font-bold ml-1 text-sm absolute right-2.5 cursor-pointer"
-                          title="Remove file"
-                        >
-                          ✕
-                        </button>
+                        {!isUploadingFile && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUploadedFileName("");
+                              setNewFileUrl("");
+                              setFileSizeMb(0);
+                            }}
+                            className="text-rose-500 hover:text-rose-700 font-bold ml-1 text-sm absolute right-2.5 cursor-pointer"
+                            title="Remove file"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <Input
@@ -637,86 +879,109 @@ function ProjectsPage() {
                     <Button
                       type="submit"
                       size="sm"
-                      disabled={busy}
+                      disabled={busy || isUploadingFile || (!!uploadedFileName && !newFileUrl)}
                       className="w-full h-8 text-xs font-semibold gap-1"
+                      title={isUploadingFile ? "Waiting for upload to finish…" : undefined}
                     >
-                      <Paperclip className="h-3.5 w-3.5" /> Attach
+                      <Paperclip className="h-3.5 w-3.5" />
+                      {isUploadingFile ? "Uploading…" : "Attach"}
                     </Button>
                   </div>
+
                 </form>
               )}
 
-              {/* Roster of Files */}
-              <div className="space-y-3 mt-4 max-h-60 overflow-y-auto pr-1">
+              {/* ── File Roster ── */}
+              <div className="space-y-3 mt-4 max-h-64 overflow-y-auto pr-1">
                 {["brochures", "floor_plans", "gallery_images", "documents"].map((cat) => {
                   const files = selectedProj?.[cat] || [];
                   if (files.length === 0) return null;
                   return (
                     <div key={cat} className="space-y-1.5">
                       <h4 className="text-[10px] uppercase font-bold tracking-wider text-primary border-b pb-1 font-display">
-                        {cat.replace("_", " ")}
+                        {catLabel[cat] || cat.replace("_", " ")}
                       </h4>
-                      {files.map((f: any, idx: number) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between p-2 rounded-lg bg-card border text-xs font-medium hover:bg-muted/10"
-                        >
-                          <span className="flex items-center gap-2 text-foreground font-semibold">
-                            {cat === "gallery_images" ? (
-                              <Image className="h-4 w-4 text-emerald-500" />
-                            ) : (
-                              <FileText className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            {f.name}{" "}
-                            <span className="text-[9px] font-normal text-muted-foreground">
-                              ({f.size} MB)
-                            </span>
-                          </span>
-                          <span className="flex items-center gap-2">
-                            <a
-                              href={f.url}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                if (f.url.startsWith("data:")) {
-                                  const newTab = window.open();
-                                  if (newTab) {
-                                    newTab.document.write(
-                                      `<html><head><title>${f.name}</title></head><body style="margin:0;"><iframe src="${f.url}" width="100%" height="100%" style="border:none;"></iframe></body></html>`
-                                    );
-                                    newTab.document.close();
-                                  } else {
-                                    const link = document.createElement("a");
-                                    link.href = f.url;
-                                    link.download = f.name;
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                  }
-                                } else {
-                                  const url = f.url.startsWith("http") ? f.url : "https://" + f.url;
-                                  window.open(url, "_blank");
-                                }
-                              }}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1 rounded text-primary hover:bg-primary/5 cursor-pointer"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                            {can(role).editProject() && (
+                      {files.map((f: any, idx: number) => {
+                        const fileType = getFileType(f.url);
+                        return (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-2.5 rounded-lg bg-card border border-border/60 text-xs font-medium hover:bg-muted/10 transition-colors group"
+                          >
+                            {/* Icon + Name */}
+                            <div className="flex items-center gap-2 min-w-0">
+                              {cat === "gallery_images" || fileType === "image" ? (
+                                <Image className="h-4 w-4 text-emerald-500 shrink-0" />
+                              ) : fileType === "pdf" ? (
+                                <FileText className="h-4 w-4 text-red-400 shrink-0" />
+                              ) : (
+                                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                              )}
+                              <span className="font-semibold text-foreground truncate">
+                                {f.name}
+                              </span>
+                              <span className="text-[9px] font-normal text-muted-foreground shrink-0">
+                                ({f.size} MB)
+                              </span>
+                            </div>
+
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {/* Preview button — opens in-app modal */}
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 text-destructive hover:bg-destructive/5 hover:text-destructive"
-                                onClick={() => handleDeleteFile(cat, idx)}
+                                className="h-7 w-7 text-primary hover:bg-primary/10"
+                                title="Preview file"
+                                onClick={() => setPreviewFile(f)}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Eye className="h-3.5 w-3.5" />
                               </Button>
-                            )}
-                          </span>
-                        </div>
-                      ))}
+
+                              {/* Open URL in new tab */}
+                              <a
+                                href={
+                                  f.url.startsWith("data:") || f.url.startsWith("http")
+                                    ? f.url
+                                    : "https://" + f.url
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Open link in new tab"
+                                onClick={(e) => {
+                                  if (f.url.startsWith("data:")) {
+                                    e.preventDefault();
+                                    setPreviewFile(f);
+                                  }
+                                }}
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/5"
+                                  title="Open URL"
+                                  asChild={false}
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </Button>
+                              </a>
+
+                              {/* Delete */}
+                              {can(role).editProject() && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive hover:bg-destructive/5 hover:text-destructive"
+                                  onClick={() => handleDeleteFile(cat, idx)}
+                                  title="Remove file"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -734,6 +999,9 @@ function ProjectsPage() {
           </Tabs>
         </DialogContent>
       </Dialog>
+
+      {/* ── File Preview Modal (outside workspace dialog) ──── */}
+      <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
     </AppShell>
   );
 }

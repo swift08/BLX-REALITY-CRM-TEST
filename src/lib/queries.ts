@@ -844,6 +844,25 @@ export async function addCalendarEvent(event: any) {
   return callApi("addCalendarEvent", { event });
 }
 
+export async function uploadProjectFile(
+  fileData: string,
+  fileName: string,
+  mimeType: string,
+  projectId: string,
+): Promise<{ url: string; path: string }> {
+  return callApi("uploadProjectFile", { fileData, fileName, mimeType, projectId });
+}
+
+
+export async function updateCalendarEvent(id: string, event: any) {
+  return callApi("updateCalendarEvent", { id, event });
+}
+
+export async function deleteCalendarEvent(id: string) {
+  return callApi("deleteCalendarEvent", { id });
+}
+
+
 export async function addWorkflowRule(rule: any) {
   return callApi("addWorkflowRule", { rule });
 }

@@ -1209,7 +1209,7 @@ export default async function handler(req: any, res: any) {
             customer_id: leadId,
             name: doc.name,
             url: doc.url,
-            size: doc.size || 0,
+            size: Math.round(doc.size || 0),
             category: doc.category || "Other",
             uploaded_by: actorName,
           })
@@ -1248,6 +1248,58 @@ export default async function handler(req: any, res: any) {
         await publishEvent("OPPORTUNITY_CREATED", customerId, { budget, owner }, actorName);
         return res.status(200).json(dbOpportunity);
       }
+      case "uploadProjectFile": {
+        const { fileData, fileName, mimeType, projectId } = payload;
+        if (!fileData || !fileName) {
+          return res.status(400).json({ error: "Missing fileData or fileName" });
+        }
+
+        // Ensure the storage bucket exists (public)
+        const { data: buckets } = await supabase.storage.listBuckets();
+        const bucketExists = (buckets || []).some((b: any) => b.name === "project-files");
+        if (!bucketExists) {
+          const { error: bucketErr } = await supabase.storage.createBucket("project-files", {
+            public: true,
+            fileSizeLimit: 52428800, // 50 MB
+          });
+          if (bucketErr && !bucketErr.message.includes("already exists")) {
+            return res.status(400).json({ error: "Failed to create storage bucket: " + bucketErr.message });
+          }
+        }
+
+        // Convert base64 → Buffer
+        const base64Clean = fileData.replace(/^data:[^;]+;base64,/, "");
+        const fileBuffer = Buffer.from(base64Clean, "base64");
+
+        // Generate unique storage path
+        const sanitizedName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storagePath = `${projectId || "general"}/${Date.now()}_${sanitizedName}`;
+
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from("project-files")
+          .upload(storagePath, fileBuffer, {
+            contentType: mimeType || "application/octet-stream",
+            upsert: true,
+          });
+
+        if (uploadErr) {
+          return res.status(400).json({ error: "Storage upload failed: " + uploadErr.message });
+        }
+
+        // Get the permanent public URL
+        const { data: urlData } = supabase.storage
+          .from("project-files")
+          .getPublicUrl(storagePath);
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "PROJECT_FILE_UPLOAD",
+          old_value: "None",
+          new_value: fileName,
+        });
+
+        return res.status(200).json({ url: urlData.publicUrl, path: storagePath });
+      }
       case "addCalendarEvent": {
         const { event } = payload;
         const { data, error } = await supabase
@@ -1272,6 +1324,58 @@ export default async function handler(req: any, res: any) {
           new_value: event.title,
         });
         return res.status(200).json(data);
+      }
+      case "updateCalendarEvent": {
+        const { id: evId, event: evUpdate } = payload;
+        if (!evId) return res.status(400).json({ error: "Missing event id" });
+        const { data: existing } = await supabase
+          .from("calendar_events")
+          .select("title")
+          .eq("id", evId)
+          .single();
+        const { data: updated, error: upErr } = await supabase
+          .from("calendar_events")
+          .update({
+            type: evUpdate.type,
+            title: evUpdate.title,
+            start_time: evUpdate.start,
+            end_time: evUpdate.end,
+            customer_id: evUpdate.customerId || null,
+            sales_person: evUpdate.salesPerson || null,
+            details: evUpdate.details || "",
+          })
+          .eq("id", evId)
+          .select()
+          .single();
+        if (upErr) return res.status(400).json({ error: upErr.message });
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "CALENDAR_EVENT_UPDATE",
+          old_value: existing?.title || "N/A",
+          new_value: evUpdate.title,
+        });
+        return res.status(200).json(updated);
+      }
+      case "deleteCalendarEvent": {
+        const { id: delId } = payload;
+        if (!delId) return res.status(400).json({ error: "Missing event id" });
+        const { data: toDelete } = await supabase
+          .from("calendar_events")
+          .select("title")
+          .eq("id", delId)
+          .single();
+        const { error: delErr } = await supabase
+          .from("calendar_events")
+          .delete()
+          .eq("id", delId);
+        if (delErr) return res.status(400).json({ error: delErr.message });
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "CALENDAR_EVENT_DELETE",
+          old_value: toDelete?.title || "N/A",
+          new_value: "Deleted",
+        });
+        return res.status(200).json({ success: true });
       }
       case "addWorkflowRule": {
         const { rule } = payload;

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TempBadge, StageBadge } from "@/components/temp-badge";
 import { NewLeadDialog } from "@/components/new-lead-dialog";
+import { Input } from "@/components/ui/input";
 import {
   useDashboardStats,
   useLeads,
@@ -38,6 +39,8 @@ import {
   FileBarChart2,
   FileCheck,
   DollarSign,
+  Search,
+  ExternalLink,
 } from "lucide-react";
 import {
   AreaChart,
@@ -234,18 +237,7 @@ function Dashboard() {
       const key = cDate.toLocaleString("default", { month: "short", year: "2-digit" });
       if (key in dataMap) dataMap[key]++;
     });
-    const result = Object.entries(dataMap).map(([month, count]) => ({ month, count }));
-    if (result.reduce((sum, item) => sum + item.count, 0) === 0) {
-      return [
-        { month: "Feb 26", count: 12 },
-        { month: "Mar 26", count: 18 },
-        { month: "Apr 26", count: 24 },
-        { month: "May 26", count: 35 },
-        { month: "Jun 26", count: 29 },
-        { month: "Jul 26", count: rawCustomers.length || 8 },
-      ];
-    }
-    return result;
+    return Object.entries(dataMap).map(([month, count]) => ({ month, count }));
   };
 
   const getMonthlyRevenueTrendData = () => {
@@ -265,21 +257,10 @@ function Dashboard() {
         }
       });
     });
-    const result = Object.entries(dataMap).map(([month, amount]) => ({
+    return Object.entries(dataMap).map(([month, amount]) => ({
       month,
       amount: amount / 100000,
     }));
-    if (result.reduce((sum, item) => sum + item.amount, 0) === 0) {
-      return [
-        { month: "Feb 26", amount: 15 },
-        { month: "Mar 26", amount: 42 },
-        { month: "Apr 26", amount: 28 },
-        { month: "May 26", amount: 65 },
-        { month: "Jun 26", amount: 80 },
-        { month: "Jul 26", amount: totalRevenueVal / 100000 || 55 },
-      ];
-    }
-    return result;
   };
 
   const leadTrendData = getMonthlyLeadTrendData();
@@ -289,6 +270,13 @@ function Dashboard() {
   const [selectedReport, setSelectedReport] = useState<
     "all" | "sales" | "revenue" | "pending_payment" | "hot"
   >("all");
+
+  const [selectedCardMetric, setSelectedCardMetric] = useState<{
+    id: "total_leads" | "new_leads" | "active_leads" | "hot_leads" | "converted" | "lost_leads" | "visits_scheduled" | "visits_completed" | "revenue" | "conversion_pct";
+    title: string;
+    description: string;
+  } | null>(null);
+  const [metricSearchQuery, setMetricSearchQuery] = useState("");
 
   const [widgetDeck, setWidgetDeck] = useState<WidgetConfig[]>(() => {
     if (typeof window !== "undefined") {
@@ -380,6 +368,50 @@ function Dashboard() {
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 4);
+
+  const getMetricData = () => {
+    if (!selectedCardMetric) return [];
+    switch (selectedCardMetric.id) {
+      case "total_leads":
+        return rawCustomers;
+      case "new_leads":
+        return rawCustomers.filter((c) => c.stage === "new");
+      case "active_leads":
+        return rawCustomers.filter(
+          (c) => c.stage !== "converted" && c.stage !== "closed" && c.stage !== "lost",
+        );
+      case "hot_leads":
+        return rawCustomers.filter((c) => c.temperature === "hot");
+      case "converted":
+        return rawCustomers.filter((c) => c.stage === "converted");
+      case "lost_leads":
+        return rawCustomers.filter((c) => c.stage === "lost" || c.stage === "closed");
+      case "visits_scheduled":
+        return rawCustomers.filter((c) => c.stage === "site_visit_scheduled");
+      case "visits_completed":
+        return rawCustomers.filter((c) => c.stage === "site_visit_completed");
+      case "revenue":
+        return rawCustomers.filter((c) => c.booking && c.booking.payment_status === "completed");
+      case "conversion_pct":
+        return rawCustomers;
+      default:
+        return [];
+    }
+  };
+
+  const metricData = getMetricData();
+
+  const filteredMetricData = metricData.filter((c) => {
+    if (!metricSearchQuery) return true;
+    const q = metricSearchQuery.toLowerCase();
+    const matchName = c.name.toLowerCase().includes(q);
+    const matchPhone = c.phone.includes(q);
+    const matchEmail = (c.email ?? "").toLowerCase().includes(q);
+    const matchProject = (c.projects?.name ?? "").toLowerCase().includes(q);
+    const matchOwner = (c.owner ?? "").toLowerCase().includes(q);
+    const matchSource = (c.source ?? "").toLowerCase().includes(q);
+    return matchName || matchPhone || matchEmail || matchProject || matchOwner || matchSource;
+  });
 
   const overdueFollowups = followups.filter((f) => f.status === "overdue");
 
@@ -559,6 +591,230 @@ function Dashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* Metric Detail Modal */}
+      <Dialog 
+        open={selectedCardMetric !== null} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedCardMetric(null);
+            setMetricSearchQuery("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-6 overflow-hidden bg-card border border-border shadow-2xl rounded-xl">
+          <DialogHeader className="pb-2 text-left">
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-lg font-bold font-display text-foreground flex items-center gap-2">
+                  {selectedCardMetric?.title}
+                  <span className="text-xs px-2 py-0.5 font-sans font-medium rounded-full bg-primary/10 text-primary">
+                    {filteredMetricData.length} {filteredMetricData.length === 1 ? 'item' : 'items'}
+                  </span>
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-1">
+                  {selectedCardMetric?.description}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* Search bar */}
+          <div className="relative mt-2 mb-4 shrink-0">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, phone, email, project, owner..."
+              value={metricSearchQuery}
+              onChange={(e) => setMetricSearchQuery(e.target.value)}
+              className="pl-9 h-9 text-xs rounded-lg bg-muted/20 border-border"
+            />
+          </div>
+
+          {/* Scrollable container */}
+          <div className="flex-1 overflow-y-auto border rounded-lg bg-card/50">
+            {filteredMetricData.length === 0 ? (
+              <div className="p-12 text-center text-xs text-muted-foreground">
+                No matching records found.
+              </div>
+            ) : selectedCardMetric?.id === "revenue" ? (
+              <div className="overflow-x-auto text-xs">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="text-muted-foreground uppercase tracking-wider border-b bg-muted/20 h-10 font-semibold select-none">
+                      <th className="px-6 py-2">Customer Details</th>
+                      <th className="px-3 py-2">Project</th>
+                      <th className="px-3 py-2">Unit ID</th>
+                      <th className="px-3 py-2">Booking Date</th>
+                      <th className="px-6 py-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMetricData.map((c) => (
+                      <tr key={c.id} className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors">
+                        <td className="px-6 py-2">
+                          <a 
+                            href={`/leads#?id=${c.id}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
+                          >
+                            {c.name}
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            <MaskedField value={c.phone} type="phone" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-foreground font-medium">
+                          {c.projects?.name ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground font-mono">
+                          {c.booking?.unit_id ? c.booking.unit_id.replace("unit-", "") : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground font-medium">
+                          {c.booking?.booking_date ? new Date(c.booking.booking_date).toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric"
+                          }) : "—"}
+                        </td>
+                        <td className="px-6 py-2 text-right font-bold text-emerald-500">
+                          {c.booking?.amount ? formatINR(c.booking.amount) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : selectedCardMetric?.id === "conversion_pct" ? (
+              <div className="overflow-x-auto text-xs">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="text-muted-foreground uppercase tracking-wider border-b bg-muted/20 h-10 font-semibold select-none">
+                      <th className="px-6 py-2">Customer Details</th>
+                      <th className="px-3 py-2">Project</th>
+                      <th className="px-3 py-2">Stage</th>
+                      <th className="px-3 py-2">Win Status</th>
+                      <th className="px-3 py-2">Budget</th>
+                      <th className="px-6 py-2 text-right">Owner</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMetricData.map((c) => {
+                      const isConverted = c.stage === "converted";
+                      return (
+                        <tr key={c.id} className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors">
+                          <td className="px-6 py-2">
+                            <a 
+                              href={`/leads#?id=${c.id}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
+                            >
+                              {c.name}
+                              <ExternalLink className="h-3 w-3 shrink-0" />
+                            </a>
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              <MaskedField value={c.phone} type="phone" />
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-foreground font-medium">
+                            {c.projects?.name ?? "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            <StageBadge value={stageLabels[c.stage as Stage] ?? c.stage} />
+                          </td>
+                          <td className="px-3 py-2">
+                            {isConverted ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 uppercase tracking-wide">
+                                Converted
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground uppercase tracking-wide">
+                                In Progress
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 font-bold text-foreground">
+                            <MaskedField value={c.budget || ""} type="budget" />
+                          </td>
+                          <td className="px-6 py-2 text-right text-muted-foreground font-medium">
+                            {c.owner}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto text-xs">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="text-muted-foreground uppercase tracking-wider border-b bg-muted/20 h-10 font-semibold select-none">
+                      <th className="px-6 py-2">Customer Details</th>
+                      <th className="px-3 py-2">Project</th>
+                      <th className="px-3 py-2">Stage</th>
+                      <th className="px-3 py-2">Temp</th>
+                      <th className="px-3 py-2">Budget</th>
+                      <th className="px-6 py-2 text-right">Owner</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMetricData.map((c) => (
+                      <tr key={c.id} className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors">
+                        <td className="px-6 py-2">
+                          <a 
+                            href={`/leads#?id=${c.id}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
+                          >
+                            {c.name}
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            <MaskedField value={c.phone} type="phone" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-foreground font-medium">
+                          {c.projects?.name ?? "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <StageBadge value={stageLabels[c.stage as Stage] ?? c.stage} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <TempBadge value={tempLabels[c.temperature as Temp] ?? c.temperature} />
+                        </td>
+                        <td className="px-3 py-2 font-bold text-foreground">
+                          <MaskedField value={c.budget || ""} type="budget" />
+                        </td>
+                        <td className="px-6 py-2 text-right text-muted-foreground font-medium">
+                          {c.owner}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-4 border-t mt-4 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSelectedCardMetric(null);
+                setMetricSearchQuery("");
+              }}
+              className="font-semibold text-xs h-8 px-4"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Main Grid Render stack */}
       <div className="grid grid-cols-12 gap-6 mt-4">
         {sortedWidgets.map((w) => {
@@ -567,7 +823,10 @@ function Dashboard() {
           if (w.id === "snapshot") {
             return (
               <div key="snapshot" className={`${gridClass} grid grid-cols-2 md:grid-cols-5 gap-4`}>
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "total_leads", title: "Total Leads", description: "All registered prospects and dossiers in the CRM" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-primary/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -584,7 +843,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "new_leads", title: "New Leads", description: "Uncontacted fresh prospects" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-blue-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -601,7 +863,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "active_leads", title: "Active Leads", description: "Leads currently in pipeline (unconverted and not closed/dropped)" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-emerald-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -618,7 +883,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "hot_leads", title: "Hot Leads", description: "High interest prospects tagged as hot temperature" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-rose-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -635,7 +903,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "converted", title: "Converted Leads", description: "Successful won deals and closed-won customers" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-indigo-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -652,7 +923,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "lost_leads", title: "Lost Leads", description: "Closed-lost or dropped leads" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-slate-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -669,7 +943,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "visits_scheduled", title: "Visits Scheduled", description: "Leads with scheduled property site visits" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-amber-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -686,7 +963,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "visits_completed", title: "Visits Completed", description: "Leads with successfully completed property site visits" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-emerald-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -703,7 +983,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "revenue", title: "Revenue Bookings", description: "Bookings with completed payment status" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-primary/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -720,7 +1003,10 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border/60 shadow-sm hover:shadow transition-shadow">
+                <Card 
+                  onClick={() => setSelectedCardMetric({ id: "conversion_pct", title: "Conversion Ratio Breakdown", description: "Win Ratio (Converted Leads / Total Leads)" })}
+                  className="border-border/60 shadow-sm hover:shadow hover:border-pink-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
