@@ -39,11 +39,9 @@ function CalendarPage() {
   const isSimulating = role === "sales_executive" && originalRole !== "sales_executive";
 
   // Full name of the currently logged-in user
-  const userFullName = (
-    user?.user_metadata?.full_name ||
-    user?.email?.split("@")[0] ||
-    ""
-  ).toLowerCase().trim();
+  const userFullName = (user?.user_metadata?.full_name || user?.email?.split("@")[0] || "")
+    .toLowerCase()
+    .trim();
 
   const getEventIcon = (title: string) => {
     const t = title.toLowerCase();
@@ -202,8 +200,13 @@ function CalendarPage() {
           <CardContent className="p-6">
             {/* Month grid header */}
             <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b pb-2">
-              <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div>
-              <div>Thu</div><div>Fri</div><div>Sat</div>
+              <div>Sun</div>
+              <div>Mon</div>
+              <div>Tue</div>
+              <div>Wed</div>
+              <div>Thu</div>
+              <div>Fri</div>
+              <div>Sat</div>
             </div>
             <div className="grid grid-cols-7 gap-2 mt-3 min-h-[300px]">
               {Array.from({ length: 35 }).map((_, idx) => {

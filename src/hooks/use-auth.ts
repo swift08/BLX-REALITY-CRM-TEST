@@ -55,7 +55,7 @@ async function callApi(action: string, payload: any = {}): Promise<any> {
           if (refreshData.session) {
             localStorage.setItem("blx-realty-session", JSON.stringify(refreshData.session));
             const newToken = refreshData.session.access_token;
-            
+
             // Retry the original request
             res = await fetch("/api/crm", {
               method: "POST",

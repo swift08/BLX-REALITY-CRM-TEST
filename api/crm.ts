@@ -398,7 +398,9 @@ export default async function handler(req: any, res: any) {
       case "getLeads": {
         const { data, error } = await supabase
           .from("customers")
-          .select("*, opportunities(*, bookings(*, invoices(*, payments(*)))), activities(*), communications(*), documents(*), notes(*)")
+          .select(
+            "*, opportunities(*, bookings(*, invoices(*, payments(*)))), activities(*), communications(*), documents(*), notes(*)",
+          )
           .order("created_at", { ascending: false });
         if (error) return res.status(400).json({ error: error.message });
 
@@ -411,15 +413,15 @@ export default async function handler(req: any, res: any) {
               invoices: (b.invoices || []).map((inv: any) => ({
                 ...inv,
                 dueDate: inv.due_date,
-                payments: inv.payments || []
-              }))
+                payments: inv.payments || [],
+              })),
             }));
             return {
               ...o,
               customerId: o.customer_id,
               projectId: o.project_id,
               bookings: bookingsMapped,
-              booking: bookingsMapped[0] || null
+              booking: bookingsMapped[0] || null,
             };
           }),
         }));
@@ -519,19 +521,6 @@ export default async function handler(req: any, res: any) {
         const { data, error } = await supabase.from("workflow_rules").select("*");
         if (error) return res.status(400).json({ error: error.message });
         return res.status(200).json(data || []);
-      }
-      case "getCalendarEvents": {
-        const { data, error } = await supabase.from("calendar_events").select("*");
-        if (error) return res.status(400).json({ error: error.message });
-        const mapped = (data || []).map((e: any) => ({
-          ...e,
-          start: e.start_time,
-          end: e.end_time,
-          customerId: e.customer_id,
-          salesPerson: e.sales_person,
-          time: e.start_time,
-        }));
-        return res.status(200).json(mapped);
       }
       case "getCRMUsers": {
         const { data, error } = await supabase.auth.admin.listUsers();
@@ -902,9 +891,8 @@ export default async function handler(req: any, res: any) {
             .from("opportunities")
             .select("owner")
             .eq("customer_id", leadId);
-          const assignedOwner = opps && opps[0] && opps[0].owner !== "Unassigned" 
-            ? opps[0].owner 
-            : actorName;
+          const assignedOwner =
+            opps && opps[0] && opps[0].owner !== "Unassigned" ? opps[0].owner : actorName;
 
           await supabase.from("followups").insert({
             lead_id: leadId,
@@ -1180,7 +1168,10 @@ export default async function handler(req: any, res: any) {
             }
 
             if (actualBookingId) {
-              await supabase.from("bookings").update({ payment_status: "void" }).eq("id", actualBookingId);
+              await supabase
+                .from("bookings")
+                .update({ payment_status: "void" })
+                .eq("id", actualBookingId);
             }
             if (opportunityId) {
               await supabase
@@ -1189,7 +1180,12 @@ export default async function handler(req: any, res: any) {
                 .eq("id", opportunityId);
             }
 
-            await publishEvent("BOOKING_VOIDED", leadId, { unitNumber: unit.unit_number }, actorName);
+            await publishEvent(
+              "BOOKING_VOIDED",
+              leadId,
+              { unitNumber: unit.unit_number },
+              actorName,
+            );
           }
         }
         return res.status(200).json({ success: true });
@@ -1392,7 +1388,9 @@ export default async function handler(req: any, res: any) {
             fileSizeLimit: 52428800, // 50 MB
           });
           if (bucketErr && !bucketErr.message.includes("already exists")) {
-            return res.status(400).json({ error: "Failed to create storage bucket: " + bucketErr.message });
+            return res
+              .status(400)
+              .json({ error: "Failed to create storage bucket: " + bucketErr.message });
           }
         }
 
@@ -1416,9 +1414,7 @@ export default async function handler(req: any, res: any) {
         }
 
         // Get the permanent public URL
-        const { data: urlData } = supabase.storage
-          .from("project-files")
-          .getPublicUrl(storagePath);
+        const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(storagePath);
 
         await supabase.from("audit_logs").insert({
           user: actorName,
@@ -1493,10 +1489,7 @@ export default async function handler(req: any, res: any) {
           .select("title")
           .eq("id", delId)
           .single();
-        const { error: delErr } = await supabase
-          .from("calendar_events")
-          .delete()
-          .eq("id", delId);
+        const { error: delErr } = await supabase.from("calendar_events").delete().eq("id", delId);
         if (delErr) return res.status(400).json({ error: delErr.message });
         await supabase.from("audit_logs").insert({
           user: actorName,
@@ -1514,11 +1507,11 @@ export default async function handler(req: any, res: any) {
           .select("customer_id, budget, stage")
           .eq("id", delId)
           .single();
-        
+
         if (toDelete?.stage === "converted") {
           return res.status(400).json({ error: "Converted opportunities cannot be deleted." });
         }
-        
+
         // Safe pointer cleanup: check if deleted opportunity was active
         if (toDelete?.customer_id) {
           const { data: customer } = await supabase
@@ -1526,7 +1519,7 @@ export default async function handler(req: any, res: any) {
             .select("activeOpportunityId")
             .eq("id", toDelete.customer_id)
             .single();
-          
+
           if (customer?.activeOpportunityId === delId) {
             const { data: otherOpps } = await supabase
               .from("opportunities")
@@ -1534,7 +1527,7 @@ export default async function handler(req: any, res: any) {
               .eq("customer_id", toDelete.customer_id)
               .neq("id", delId)
               .limit(1);
-            
+
             const nextActiveId = otherOpps && otherOpps.length > 0 ? otherOpps[0].id : null;
             await supabase
               .from("customers")
@@ -1543,10 +1536,7 @@ export default async function handler(req: any, res: any) {
           }
         }
 
-        const { error: delErr } = await supabase
-          .from("opportunities")
-          .delete()
-          .eq("id", delId);
+        const { error: delErr } = await supabase.from("opportunities").delete().eq("id", delId);
         if (delErr) return res.status(400).json({ error: delErr.message });
         await supabase.from("audit_logs").insert({
           user: actorName,

@@ -771,5 +771,3 @@ function SecurityTab({ role }: { role: AppRole | null }) {
     </div>
   );
 }
-
-

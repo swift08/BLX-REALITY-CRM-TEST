@@ -17,7 +17,7 @@ import {
   Building,
   Calendar,
   Sparkles,
-  ClipboardList
+  ClipboardList,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -135,9 +135,12 @@ function PropertyBookingsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-extrabold font-display text-foreground">
-                {metrics.count} <span className="text-xs font-normal text-muted-foreground">units</span>
+                {metrics.count}{" "}
+                <span className="text-xs font-normal text-muted-foreground">units</span>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Excludes cancelled/void tokens</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Excludes cancelled/void tokens
+              </p>
             </CardContent>
           </Card>
 
@@ -152,7 +155,9 @@ function PropertyBookingsPage() {
               <div className="text-2xl font-extrabold font-display text-emerald-600 dark:text-emerald-400">
                 {formatCurrency(metrics.volume)}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Total booked inventory contract value</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Total booked inventory contract value
+              </p>
             </CardContent>
           </Card>
 
@@ -167,7 +172,9 @@ function PropertyBookingsPage() {
               <div className="text-2xl font-extrabold font-display text-blue-600 dark:text-blue-400">
                 {formatCurrency(metrics.completed)}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Token funds verified & cleared</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Token funds verified & cleared
+              </p>
             </CardContent>
           </Card>
 
@@ -182,7 +189,9 @@ function PropertyBookingsPage() {
               <div className="text-2xl font-extrabold font-display text-amber-600 dark:text-amber-400">
                 {formatCurrency(metrics.pending)}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Tokens awaiting bank clearance</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Tokens awaiting bank clearance
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -202,7 +211,9 @@ function PropertyBookingsPage() {
           <div className="flex items-center gap-3 flex-wrap">
             {/* Project Filter */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-muted-foreground uppercase">Project:</span>
+              <span className="text-[11px] font-bold text-muted-foreground uppercase">
+                Project:
+              </span>
               <Select value={projectFilter} onValueChange={setProjectFilter}>
                 <SelectTrigger className="h-9 min-w-[140px] text-xs">
                   <SelectValue placeholder="All Projects" />
@@ -271,25 +282,37 @@ function PropertyBookingsPage() {
               <TableBody>
                 {isBookingsLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12 text-xs text-muted-foreground">
+                    <TableCell
+                      colSpan={8}
+                      className="text-center py-12 text-xs text-muted-foreground"
+                    >
                       Loading unit bookings ledger...
                     </TableCell>
                   </TableRow>
                 ) : filteredBookings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-16 text-xs text-muted-foreground space-y-2">
+                    <TableCell
+                      colSpan={8}
+                      className="text-center py-16 text-xs text-muted-foreground space-y-2"
+                    >
                       <div className="flex justify-center">
                         <KeyRound className="h-8 w-8 opacity-20" />
                       </div>
-                      <p className="font-semibold text-foreground text-sm">No unit bookings found</p>
+                      <p className="font-semibold text-foreground text-sm">
+                        No unit bookings found
+                      </p>
                       <p className="max-w-xs mx-auto text-xs text-muted-foreground">
-                        Bookings are created when reserving a unit for an active customer opportunity in the Customer Workspace.
+                        Bookings are created when reserving a unit for an active customer
+                        opportunity in the Customer Workspace.
                       </p>
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredBookings.map((item) => {
-                    const bookingIdShort = item.id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase();
+                    const bookingIdShort = item.id
+                      .replace(/[^a-zA-Z0-9]/g, "")
+                      .slice(-6)
+                      .toUpperCase();
                     const status = item.booking?.payment_status || "pending";
 
                     return (
@@ -305,7 +328,10 @@ function PropertyBookingsPage() {
                           {item.project_name}
                         </TableCell>
                         <TableCell className="text-xs">
-                          <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary text-[10px] font-mono font-bold">
+                          <Badge
+                            variant="outline"
+                            className="bg-primary/5 border-primary/20 text-primary text-[10px] font-mono font-bold"
+                          >
                             {item.unit_number}
                           </Badge>
                         </TableCell>

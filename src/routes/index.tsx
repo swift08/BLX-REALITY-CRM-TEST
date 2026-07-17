@@ -292,7 +292,17 @@ function Dashboard() {
   >("all");
 
   const [selectedCardMetric, setSelectedCardMetric] = useState<{
-    id: "total_leads" | "new_leads" | "active_leads" | "hot_leads" | "converted" | "lost_leads" | "visits_scheduled" | "visits_completed" | "revenue" | "conversion_pct";
+    id:
+      | "total_leads"
+      | "new_leads"
+      | "active_leads"
+      | "hot_leads"
+      | "converted"
+      | "lost_leads"
+      | "visits_scheduled"
+      | "visits_completed"
+      | "revenue"
+      | "conversion_pct";
     title: string;
     description: string;
   } | null>(null);
@@ -612,8 +622,8 @@ function Dashboard() {
       </Dialog>
 
       {/* Metric Detail Modal */}
-      <Dialog 
-        open={selectedCardMetric !== null} 
+      <Dialog
+        open={selectedCardMetric !== null}
         onOpenChange={(open) => {
           if (!open) {
             setSelectedCardMetric(null);
@@ -628,7 +638,7 @@ function Dashboard() {
                 <DialogTitle className="text-lg font-bold font-display text-foreground flex items-center gap-2">
                   {selectedCardMetric?.title}
                   <span className="text-xs px-2 py-0.5 font-sans font-medium rounded-full bg-primary/10 text-primary">
-                    {filteredMetricData.length} {filteredMetricData.length === 1 ? 'item' : 'items'}
+                    {filteredMetricData.length} {filteredMetricData.length === 1 ? "item" : "items"}
                   </span>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-1">
@@ -669,12 +679,15 @@ function Dashboard() {
                   </thead>
                   <tbody>
                     {filteredMetricData.map((c) => (
-                      <tr key={c.id} className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors">
+                      <tr
+                        key={c.id}
+                        className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors"
+                      >
                         <td className="px-6 py-2">
-                          <a 
-                            href={`/leads#?id=${c.id}`} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
+                          <a
+                            href={`/leads#?id=${c.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
                           >
                             {c.name}
@@ -691,11 +704,13 @@ function Dashboard() {
                           {c.booking?.unit_id ? c.booking.unit_id.replace("unit-", "") : "—"}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground font-medium">
-                          {c.booking?.booking_date ? new Date(c.booking.booking_date).toLocaleDateString("en-IN", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric"
-                          }) : "—"}
+                          {c.booking?.booking_date
+                            ? new Date(c.booking.booking_date).toLocaleDateString("en-IN", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              })
+                            : "—"}
                         </td>
                         <td className="px-6 py-2 text-right font-bold text-emerald-500">
                           {c.booking?.amount ? formatINR(c.booking.amount) : "—"}
@@ -722,12 +737,15 @@ function Dashboard() {
                     {filteredMetricData.map((c) => {
                       const isConverted = c.stage === "converted";
                       return (
-                        <tr key={c.id} className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors">
+                        <tr
+                          key={c.id}
+                          className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors"
+                        >
                           <td className="px-6 py-2">
-                            <a 
-                              href={`/leads#?id=${c.id}`} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
+                            <a
+                              href={`/leads#?id=${c.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
                             >
                               {c.name}
@@ -781,12 +799,15 @@ function Dashboard() {
                   </thead>
                   <tbody>
                     {filteredMetricData.map((c) => (
-                      <tr key={c.id} className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors">
+                      <tr
+                        key={c.id}
+                        className="border-b last:border-0 hover:bg-muted/10 h-14 transition-colors"
+                      >
                         <td className="px-6 py-2">
-                          <a 
-                            href={`/leads#?id=${c.id}`} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
+                          <a
+                            href={`/leads#?id=${c.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
                           >
                             {c.name}
@@ -843,8 +864,14 @@ function Dashboard() {
           if (w.id === "snapshot") {
             return (
               <div key="snapshot" className={`${gridClass} grid grid-cols-2 md:grid-cols-5 gap-4`}>
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "total_leads", title: "Total Leads", description: "All registered prospects and dossiers in the CRM" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "total_leads",
+                      title: "Total Leads",
+                      description: "All registered prospects and dossiers in the CRM",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-primary/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -863,8 +890,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "new_leads", title: "New Leads", description: "Uncontacted fresh prospects" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "new_leads",
+                      title: "New Leads",
+                      description: "Uncontacted fresh prospects",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-blue-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -883,8 +916,15 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "active_leads", title: "Active Leads", description: "Leads currently in pipeline (unconverted and not closed/dropped)" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "active_leads",
+                      title: "Active Leads",
+                      description:
+                        "Leads currently in pipeline (unconverted and not closed/dropped)",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-emerald-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -903,8 +943,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "hot_leads", title: "Hot Leads", description: "High interest prospects tagged as hot temperature" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "hot_leads",
+                      title: "Hot Leads",
+                      description: "High interest prospects tagged as hot temperature",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-rose-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -923,8 +969,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "converted", title: "Converted Leads", description: "Successful won deals and closed-won customers" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "converted",
+                      title: "Converted Leads",
+                      description: "Successful won deals and closed-won customers",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-indigo-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -943,8 +995,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "lost_leads", title: "Lost Leads", description: "Closed-lost or dropped leads" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "lost_leads",
+                      title: "Lost Leads",
+                      description: "Closed-lost or dropped leads",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-slate-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -963,8 +1021,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "visits_scheduled", title: "Visits Scheduled", description: "Leads with scheduled property site visits" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "visits_scheduled",
+                      title: "Visits Scheduled",
+                      description: "Leads with scheduled property site visits",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-amber-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -983,8 +1047,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "visits_completed", title: "Visits Completed", description: "Leads with successfully completed property site visits" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "visits_completed",
+                      title: "Visits Completed",
+                      description: "Leads with successfully completed property site visits",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-emerald-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -1003,8 +1073,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "revenue", title: "Revenue Bookings", description: "Bookings with completed payment status" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "revenue",
+                      title: "Revenue Bookings",
+                      description: "Bookings with completed payment status",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-primary/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -1023,8 +1099,14 @@ function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card 
-                  onClick={() => setSelectedCardMetric({ id: "conversion_pct", title: "Conversion Ratio Breakdown", description: "Win Ratio (Converted Leads / Total Leads)" })}
+                <Card
+                  onClick={() =>
+                    setSelectedCardMetric({
+                      id: "conversion_pct",
+                      title: "Conversion Ratio Breakdown",
+                      description: "Win Ratio (Converted Leads / Total Leads)",
+                    })
+                  }
                   className="border-border/60 shadow-sm hover:shadow hover:border-pink-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
@@ -1161,7 +1243,12 @@ function Dashboard() {
                   stroke="rgba(200,200,200,0.15)"
                 />
                 <XAxis dataKey="month" tickLine={false} tickMargin={8} style={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} tickLine={false} tickMargin={8} style={{ fontSize: 10 }} />
+                <YAxis
+                  allowDecimals={false}
+                  tickLine={false}
+                  tickMargin={8}
+                  style={{ fontSize: 10 }}
+                />
                 <Tooltip
                   contentStyle={{
                     background: "rgba(0,0,0,0.8)",

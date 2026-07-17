@@ -360,7 +360,9 @@ function InventoryPage() {
                         <div className="text-[10px] uppercase font-bold tracking-wider opacity-85">
                           Unit Number
                         </div>
-                        <div className="text-sm font-extrabold tracking-tight mt-1">{u.unit_number}</div>
+                        <div className="text-sm font-extrabold tracking-tight mt-1">
+                          {u.unit_number}
+                        </div>
                         <div className="mt-2 text-[10px] font-medium opacity-90 border-t border-white/20 pt-1.5">
                           {u.configuration} · {(u.price / 10000000).toFixed(2)} Cr
                         </div>

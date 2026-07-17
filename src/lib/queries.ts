@@ -179,6 +179,7 @@ export interface Customer {
   project_id: string | null;
   projects?: { name: string } | null;
   booking?: Booking | null;
+  bookings?: Booking[];
   lost_reason?: string;
 }
 
@@ -360,7 +361,7 @@ async function callApi(action: string, payload: any = {}): Promise<any> {
           if (refreshData.session) {
             localStorage.setItem("blx-realty-session", JSON.stringify(refreshData.session));
             const newToken = refreshData.session.access_token;
-            
+
             // Retry the original request
             res = await fetch("/api/crm", {
               method: "POST",
@@ -468,14 +469,18 @@ export function useLeads() {
           project_id: activeOpp ? activeOpp.projectId : null,
           projects: null,
           booking: activeOpp ? activeOpp.booking : null,
-          bookings: activeOpp ? (activeOpp.bookings || []) : [],
+          bookings: activeOpp ? activeOpp.bookings || [] : [],
           lost_reason: activeOpp ? activeOpp.lost_reason : undefined,
         };
       });
 
       const userFullName = getCurrentUserFullName();
       return resolved.filter((c) => {
-        const isVisible = isLeadVisible(activeRole as AppRole, currentUserId, c.owner_id || "unassigned");
+        const isVisible = isLeadVisible(
+          activeRole as AppRole,
+          currentUserId,
+          c.owner_id || "unassigned",
+        );
         const isNameMatch =
           activeRole === "sales_executive" &&
           c.owner &&
@@ -918,7 +923,6 @@ export async function uploadProjectFile(
   return callApi("uploadProjectFile", { fileData, fileName, mimeType, projectId });
 }
 
-
 export async function updateCalendarEvent(id: string, event: any) {
   return callApi("updateCalendarEvent", { id, event });
 }
@@ -926,7 +930,6 @@ export async function updateCalendarEvent(id: string, event: any) {
 export async function deleteCalendarEvent(id: string) {
   return callApi("deleteCalendarEvent", { id });
 }
-
 
 export async function addWorkflowRule(rule: any) {
   return callApi("addWorkflowRule", { rule });

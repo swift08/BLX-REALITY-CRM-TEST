@@ -202,7 +202,11 @@ function BusinessCalendar() {
       const first = weekDays[0].date;
       const last = weekDays[6].date;
       const fStr = first.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const lStr = last.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const lStr = last.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
       return `${fStr} – ${lStr}`;
     }
     if (viewMode === "monthly") {
@@ -535,9 +539,7 @@ function BusinessCalendar() {
                   <div className="text-[11px] uppercase tracking-wider opacity-75">
                     {wd.dayName}
                   </div>
-                  <div className="text-lg font-extrabold font-display mt-0.5">
-                    {wd.dayNum}
-                  </div>
+                  <div className="text-lg font-extrabold font-display mt-0.5">{wd.dayNum}</div>
                 </div>
               ))}
             </div>
@@ -673,7 +675,9 @@ function BusinessCalendar() {
                 const daysInMonth = new Date(year, month + 1, 0).getDate();
 
                 if (dayNum < 1 || dayNum > daysInMonth) {
-                  return <div key={idx} className="min-h-[110px] p-2 bg-muted/10 border-b border-r" />;
+                  return (
+                    <div key={idx} className="min-h-[110px] p-2 bg-muted/10 border-b border-r" />
+                  );
                 }
 
                 const dateObj = new Date(year, month, dayNum);
@@ -869,7 +873,8 @@ function BusinessCalendar() {
                                   <div className="text-xs text-muted-foreground flex items-center gap-2">
                                     <Clock className="h-3 w-3" />
                                     <span>
-                                      {fmtTime12(new Date(ev.start))} – {fmtTime12(new Date(ev.end))}
+                                      {fmtTime12(new Date(ev.start))} –{" "}
+                                      {fmtTime12(new Date(ev.end))}
                                     </span>
                                   </div>
                                 </div>
@@ -1022,7 +1027,12 @@ function BusinessCalendar() {
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={resetForm} className="rounded-xl text-xs h-9">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetForm}
+                className="rounded-xl text-xs h-9"
+              >
                 Cancel
               </Button>
               <Button type="submit" className="rounded-xl text-xs h-9 font-bold">
@@ -1056,7 +1066,8 @@ function BusinessCalendar() {
                     Timing Window
                   </div>
                   <div className="font-bold">
-                    {new Date(viewEv.start).toLocaleString()} – {new Date(viewEv.end).toLocaleTimeString()}
+                    {new Date(viewEv.start).toLocaleString()} –{" "}
+                    {new Date(viewEv.end).toLocaleTimeString()}
                   </div>
                 </div>
 
@@ -1073,14 +1084,12 @@ function BusinessCalendar() {
                       Linked Customer
                     </div>
                     <div className="font-bold mt-0.5">
-                      {viewEv.customerId ? (
-                        (() => {
-                          const c = customers.find((cust) => cust.id === viewEv.customerId);
-                          return c ? c.name : `ID: ${viewEv.customerId}`;
-                        })()
-                      ) : (
-                        "None"
-                      )}
+                      {viewEv.customerId
+                        ? (() => {
+                            const c = customers.find((cust) => cust.id === viewEv.customerId);
+                            return c ? c.name : `ID: ${viewEv.customerId}`;
+                          })()
+                        : "None"}
                     </div>
                   </div>
                 </div>

@@ -6,12 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  useDevelopers,
-  addDeveloper,
-  updateDeveloper,
-  uploadProjectFile,
-} from "@/lib/queries";
+import { useDevelopers, addDeveloper, updateDeveloper, uploadProjectFile } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { can } from "@/lib/permissions";
 import { toast } from "sonner";
@@ -81,9 +76,7 @@ function FilePreviewModal({
   const fileType = getFileType(file.url, file.name);
   const displayUrl = file.url.startsWith("http") ? file.url : "https://" + file.url;
 
-  const pdfViewerSrc = file.url.startsWith("data:")
-    ? file.url
-    : googleDocsViewerUrl(displayUrl);
+  const pdfViewerSrc = file.url.startsWith("data:") ? file.url : googleDocsViewerUrl(displayUrl);
 
   const openUploadedFile = () => {
     fetch(file.url)
@@ -104,7 +97,15 @@ function FilePreviewModal({
   };
 
   return (
-    <Dialog open={!!file} onOpenChange={(open) => { if (!open) { onClose(); setPdfLoading(true); } }}>
+    <Dialog
+      open={!!file}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+          setPdfLoading(true);
+        }
+      }}
+    >
       <DialogContent className="max-w-4xl w-full p-0 overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-muted/30">
           <div className="flex items-center gap-2 min-w-0">
@@ -124,7 +125,12 @@ function FilePreviewModal({
           <div className="flex items-center gap-1.5 shrink-0">
             {file.url.startsWith("data:") ? (
               <>
-                <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={openUploadedFile}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={openUploadedFile}
+                >
                   <ExternalLink className="h-3.5 w-3.5" />
                   Open File
                 </Button>
@@ -143,7 +149,15 @@ function FilePreviewModal({
                 </Button>
               </a>
             )}
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { onClose(); setPdfLoading(true); }}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => {
+                onClose();
+                setPdfLoading(true);
+              }}
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -155,9 +169,7 @@ function FilePreviewModal({
             {file.url.startsWith("data:") ? "Source:" : "URL:"}
           </span>
           <span className="text-xs text-primary font-medium truncate break-all select-all">
-            {file.url.startsWith("data:")
-              ? `Uploaded file — ${file.name}`
-              : displayUrl}
+            {file.url.startsWith("data:") ? `Uploaded file — ${file.name}` : displayUrl}
           </span>
         </div>
 
@@ -178,7 +190,9 @@ function FilePreviewModal({
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-muted/20 z-10">
                   <div className="flex flex-col items-center gap-3">
                     <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-                    <p className="text-xs font-semibold text-muted-foreground">Loading PDF viewer…</p>
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      Loading PDF viewer…
+                    </p>
                   </div>
                 </div>
               )}
@@ -546,8 +560,12 @@ function DevelopersPage() {
 
           <Tabs defaultValue="profile" className="w-full mt-4">
             <TabsList className="grid w-full grid-cols-2 bg-muted p-1 rounded-xl">
-              <TabsTrigger value="profile" className="rounded-lg text-xs font-bold">Profile Details</TabsTrigger>
-              <TabsTrigger value="documents" className="rounded-lg text-xs font-bold">Files & Document Catalog</TabsTrigger>
+              <TabsTrigger value="profile" className="rounded-lg text-xs font-bold">
+                Profile Details
+              </TabsTrigger>
+              <TabsTrigger value="documents" className="rounded-lg text-xs font-bold">
+                Files & Document Catalog
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="profile" className="space-y-4 py-4 text-left">

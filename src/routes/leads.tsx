@@ -1096,7 +1096,9 @@ function Customer360Workspace({
   };
 
   const handleDeleteOpp = async (oppId: string) => {
-    if (!window.confirm("Are you sure you want to delete this opportunity? This cannot be undone.")) {
+    if (
+      !window.confirm("Are you sure you want to delete this opportunity? This cannot be undone.")
+    ) {
       return;
     }
     try {
@@ -1407,7 +1409,9 @@ function Customer360Workspace({
 
           return (
             <div key={step.key} className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className={`text-[10px] px-2.5 py-1 rounded-full border transition-all ${badgeStyle}`}>
+              <span
+                className={`text-[10px] px-2.5 py-1 rounded-full border transition-all ${badgeStyle}`}
+              >
                 {step.label}
               </span>
               {sIdx < stepsArr.length - 1 && (
@@ -2473,7 +2477,7 @@ function Customer360Workspace({
 
               {/* TAB 9: BOOKINGS */}
               <TabsContent value="bookings" className="m-0 space-y-4">
-                {(!activeOpp?.bookings || activeOpp.bookings.length === 0) ? (
+                {!activeOpp?.bookings || activeOpp.bookings.length === 0 ? (
                   <div className="max-w-xl p-4 border rounded-xl bg-card space-y-4">
                     <h3 className="font-bold text-xs uppercase tracking-wider text-primary flex items-center gap-1">
                       <DollarSign className="h-4 w-4" /> Reserve Property Unit holding
@@ -2547,7 +2551,9 @@ function Customer360Workspace({
                     </div>
 
                     {activeOpp.bookings.map((booking: any) => {
-                      const resolvedUnitNumber = allUnits.find((u) => u.id === booking.unit_id)?.unit_number || booking.unit_id;
+                      const resolvedUnitNumber =
+                        allUnits.find((u) => u.id === booking.unit_id)?.unit_number ||
+                        booking.unit_id;
                       return (
                         <div
                           key={booking.id}
@@ -2555,12 +2561,22 @@ function Customer360Workspace({
                         >
                           <h4 className="font-bold text-xs text-amber-500 uppercase tracking-wider flex items-center gap-2">
                             <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                            Unit Hold Booking Active: #BK-{booking.id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase()}
+                            Unit Hold Booking Active: #BK-
+                            {booking.id
+                              .replace(/[^a-zA-Z0-9]/g, "")
+                              .slice(-6)
+                              .toUpperCase()}
                           </h4>
                           <div className="text-xs grid grid-cols-2 gap-y-1.5 max-w-xs text-left">
-                            <span className="font-medium text-muted-foreground">Allocated Unit:</span>
-                            <span className="font-bold font-mono text-foreground">{resolvedUnitNumber}</span>
-                            <span className="font-medium text-muted-foreground">Holding Amount:</span>
+                            <span className="font-medium text-muted-foreground">
+                              Allocated Unit:
+                            </span>
+                            <span className="font-bold font-mono text-foreground">
+                              {resolvedUnitNumber}
+                            </span>
+                            <span className="font-medium text-muted-foreground">
+                              Holding Amount:
+                            </span>
                             <span className="font-bold text-foreground">
                               ₹{booking.amount.toLocaleString("en-IN")}
                             </span>
@@ -2584,7 +2600,11 @@ function Customer360Workspace({
                               variant="outline"
                               className="text-destructive hover:bg-destructive/5"
                               onClick={async () => {
-                                if (confirm(`Cancel booking for Unit ${resolvedUnitNumber} and release back to available?`)) {
+                                if (
+                                  confirm(
+                                    `Cancel booking for Unit ${resolvedUnitNumber} and release back to available?`,
+                                  )
+                                ) {
                                   try {
                                     await cancelBooking(customer.id, booking.id);
                                     toast.success(`Booking voided for Unit ${resolvedUnitNumber}.`);
@@ -2639,7 +2659,8 @@ function Customer360Workspace({
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {projUnits.filter((u) => u.status === "available").length === 0 ? (
+                                  {projUnits.filter((u) => u.status === "available").length ===
+                                  0 ? (
                                     <SelectItem value="no_units" disabled>
                                       No available units found
                                     </SelectItem>
@@ -2663,7 +2684,6 @@ function Customer360Workspace({
                         </div>
                       </details>
                     </div>
-
                   </div>
                 )}
               </TabsContent>
@@ -2674,80 +2694,98 @@ function Customer360Workspace({
                   <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
                     Billing Statements & Invoices
                   </h3>
-                  {activeOpp?.bookings?.flatMap((b: any) => (b.invoices || []).map((inv: any) => ({ ...inv, unit_id: b.unit_id }))).map((inv: any) => {
-                    const resolvedUnitNum = allUnits.find((u) => u.id === inv.unit_id)?.unit_number || "Unit";
-                    return (
-                      <div
-                        key={inv.id}
-                        className="p-4 border rounded-xl bg-card text-xs flex justify-between items-center shadow-sm"
-                      >
-                        <div className="space-y-1">
-                          <div className="font-bold text-foreground flex items-center gap-2">
-                            <span>Invoice #{inv.id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase()}</span>
-                            <span className="text-[10px] text-muted-foreground font-semibold">
-                              (Unit: {resolvedUnitNum})
-                            </span>
-                            <span
-                              className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase ${
-                                inv.status === "paid"
-                                  ? "bg-emerald-500/10 text-emerald-500"
-                                  : "bg-amber-500/10 text-amber-500"
-                              }`}
-                            >
-                              {inv.status}
-                            </span>
+                  {activeOpp?.bookings
+                    ?.flatMap((b: any) =>
+                      (b.invoices || []).map((inv: any) => ({ ...inv, unit_id: b.unit_id })),
+                    )
+                    .map((inv: any) => {
+                      const resolvedUnitNum =
+                        allUnits.find((u) => u.id === inv.unit_id)?.unit_number || "Unit";
+                      return (
+                        <div
+                          key={inv.id}
+                          className="p-4 border rounded-xl bg-card text-xs flex justify-between items-center shadow-sm"
+                        >
+                          <div className="space-y-1">
+                            <div className="font-bold text-foreground flex items-center gap-2">
+                              <span>
+                                Invoice #
+                                {inv.id
+                                  .replace(/[^a-zA-Z0-9]/g, "")
+                                  .slice(-6)
+                                  .toUpperCase()}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground font-semibold">
+                                (Unit: {resolvedUnitNum})
+                              </span>
+                              <span
+                                className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase ${
+                                  inv.status === "paid"
+                                    ? "bg-emerald-500/10 text-emerald-500"
+                                    : "bg-amber-500/10 text-amber-500"
+                                }`}
+                              >
+                                {inv.status}
+                              </span>
+                            </div>
+                            <p className="text-muted-foreground">
+                              Due: {new Date(inv.dueDate).toLocaleDateString()}
+                            </p>
                           </div>
-                          <p className="text-muted-foreground">
-                            Due: {new Date(inv.dueDate).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold text-foreground text-sm">
-                            ₹{inv.amount.toLocaleString("en-IN")}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1.5 justify-end">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-[10px] gap-1 font-semibold"
-                              onClick={async () => {
-                                try {
-                                  toast.loading("Generating PDF Tax Invoice...", { id: "pdf-gen" });
-                                  await downloadPdfInvoice({
-                                    bookingId: inv.booking_id,
-                                    leadId: customer.id,
-                                    customerName: customer.name,
-                                    customerPhone: customer.phone,
-                                    customerEmail: customer.email || undefined,
-                                    projectName: activeOpp?.projectId || "BLX Realty Project",
-                                    unitNumber: resolvedUnitNum,
-                                    amount: inv.amount,
-                                    paymentStatus: inv.status,
-                                    bookingDate: new Date().toISOString(),
-                                  });
-                                  toast.success("Official PDF Tax Invoice downloaded!", { id: "pdf-gen" });
-                                } catch (err: any) {
-                                  toast.error(err.message || "Failed to generate PDF", { id: "pdf-gen" });
-                                }
-                              }}
-                            >
-                              <FileText className="h-3 w-3" /> Download PDF
-                            </Button>
-                            {inv.status === "unpaid" && can(role).approveBookingRequest() && (
+                          <div className="text-right">
+                            <div className="font-bold text-foreground text-sm">
+                              ₹{inv.amount.toLocaleString("en-IN")}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5 justify-end">
                               <Button
                                 size="sm"
-                                className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                                onClick={() => handleVerifyPayment(inv.booking_id)}
+                                variant="outline"
+                                className="h-7 text-[10px] gap-1 font-semibold"
+                                onClick={async () => {
+                                  try {
+                                    toast.loading("Generating PDF Tax Invoice...", {
+                                      id: "pdf-gen",
+                                    });
+                                    await downloadPdfInvoice({
+                                      bookingId: inv.booking_id,
+                                      leadId: customer.id,
+                                      customerName: customer.name,
+                                      customerPhone: customer.phone,
+                                      customerEmail: customer.email || undefined,
+                                      projectName: activeOpp?.projectId || "BLX Realty Project",
+                                      unitNumber: resolvedUnitNum,
+                                      amount: inv.amount,
+                                      paymentStatus: inv.status,
+                                      bookingDate: new Date().toISOString(),
+                                    });
+                                    toast.success("Official PDF Tax Invoice downloaded!", {
+                                      id: "pdf-gen",
+                                    });
+                                  } catch (err: any) {
+                                    toast.error(err.message || "Failed to generate PDF", {
+                                      id: "pdf-gen",
+                                    });
+                                  }
+                                }}
                               >
-                                Clear invoice
+                                <FileText className="h-3 w-3" /> Download PDF
                               </Button>
-                            )}
+                              {inv.status === "unpaid" && can(role).approveBookingRequest() && (
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                                  onClick={() => handleVerifyPayment(inv.booking_id)}
+                                >
+                                  Clear invoice
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  {(!activeOpp?.bookings || activeOpp.bookings.flatMap((b: any) => b.invoices || []).length === 0) && (
+                      );
+                    })}
+                  {(!activeOpp?.bookings ||
+                    activeOpp.bookings.flatMap((b: any) => b.invoices || []).length === 0) && (
                     <p className="text-xs text-muted-foreground">
                       No invoices issued. Reserve a unit first.
                     </p>
@@ -2762,13 +2800,14 @@ function Customer360Workspace({
                     Settled Payments Ledger
                   </h3>
                   {activeOpp?.bookings
-                    ?.flatMap((b: any) => 
-                      (b.invoices || []).flatMap((inv: any) => 
-                        (inv.payments || []).map((pay: any) => ({ ...pay, unit_id: b.unit_id }))
-                      )
+                    ?.flatMap((b: any) =>
+                      (b.invoices || []).flatMap((inv: any) =>
+                        (inv.payments || []).map((pay: any) => ({ ...pay, unit_id: b.unit_id })),
+                      ),
                     )
                     ?.map((pay: any) => {
-                      const resolvedUnitNum = allUnits.find((u) => u.id === pay.unit_id)?.unit_number || "Unit";
+                      const resolvedUnitNum =
+                        allUnits.find((u) => u.id === pay.unit_id)?.unit_number || "Unit";
                       return (
                         <div
                           key={pay.id}
@@ -2789,8 +2828,8 @@ function Customer360Workspace({
                       );
                     })}
                   {(!activeOpp?.bookings ||
-                    !activeOpp.bookings.some((b: any) => 
-                      b.invoices?.some((inv: any) => inv.payments && inv.payments.length > 0)
+                    !activeOpp.bookings.some((b: any) =>
+                      b.invoices?.some((inv: any) => inv.payments && inv.payments.length > 0),
                     )) && <p className="text-xs text-muted-foreground">No payments cleared yet.</p>}
                 </div>
               </TabsContent>
