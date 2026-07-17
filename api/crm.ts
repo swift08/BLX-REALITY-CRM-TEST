@@ -1506,6 +1506,52 @@ export default async function handler(req: any, res: any) {
         });
         return res.status(200).json({ success: true });
       }
+      case "deleteOpportunity": {
+        const { id: delId } = payload;
+        if (!delId) return res.status(400).json({ error: "Missing opportunity id" });
+        const { data: toDelete } = await supabase
+          .from("opportunities")
+          .select("customer_id, budget, stage")
+          .eq("id", delId)
+          .single();
+        
+        // Safe pointer cleanup: check if deleted opportunity was active
+        if (toDelete?.customer_id) {
+          const { data: customer } = await supabase
+            .from("customers")
+            .select("activeOpportunityId")
+            .eq("id", toDelete.customer_id)
+            .single();
+          
+          if (customer?.activeOpportunityId === delId) {
+            const { data: otherOpps } = await supabase
+              .from("opportunities")
+              .select("id")
+              .eq("customer_id", toDelete.customer_id)
+              .neq("id", delId)
+              .limit(1);
+            
+            const nextActiveId = otherOpps && otherOpps.length > 0 ? otherOpps[0].id : null;
+            await supabase
+              .from("customers")
+              .update({ activeOpportunityId: nextActiveId })
+              .eq("id", toDelete.customer_id);
+          }
+        }
+
+        const { error: delErr } = await supabase
+          .from("opportunities")
+          .delete()
+          .eq("id", delId);
+        if (delErr) return res.status(400).json({ error: delErr.message });
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "OPPORTUNITY_DELETE",
+          old_value: toDelete ? `Stage: ${toDelete.stage}, Budget: ${toDelete.budget}` : "N/A",
+          new_value: "Deleted",
+        });
+        return res.status(200).json({ success: true });
+      }
       case "addWorkflowRule": {
         const { rule } = payload;
         const { data, error } = await supabase

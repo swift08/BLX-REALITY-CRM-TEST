@@ -28,6 +28,7 @@ import {
   confirmBookingPayment,
   completeFollowup,
   addCustomerOpportunity,
+  deleteOpportunity,
   addCustomerDocument,
   uploadProjectFile,
   addLeadCommunicationLog,
@@ -1122,6 +1123,19 @@ function Customer360Workspace({
     }
   };
 
+  const handleDeleteOpp = async (oppId: string) => {
+    if (!window.confirm("Are you sure you want to delete this opportunity? This cannot be undone.")) {
+      return;
+    }
+    try {
+      await deleteOpportunity(oppId);
+      toast.success("Opportunity removed successfully.");
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete opportunity");
+    }
+  };
+
   const handleAddActivity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!discussSummary.trim() || !nextAction.trim()) {
@@ -1852,10 +1866,20 @@ function Customer360Workspace({
                           </span>
                         )}
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
-                            Opportunity #{idx + 1}
-                          </CardTitle>
-                          <h4 className="text-sm font-bold text-foreground mt-1">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
+                              Opportunity #{idx + 1}
+                            </CardTitle>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 rounded-full text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 shrink-0"
+                              onClick={() => handleDeleteOpp(opp.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          <h4 className="text-sm font-bold text-foreground mt-1 pr-16">
                             {proj?.name || "Unknown Project"}
                           </h4>
                         </CardHeader>

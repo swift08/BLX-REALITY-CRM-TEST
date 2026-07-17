@@ -901,6 +901,10 @@ export async function addCustomerOpportunity(
   return callApi("addCustomerOpportunity", { customerId, projectId, budget, temperature, owner });
 }
 
+export async function deleteOpportunity(oppId: string) {
+  return callApi("deleteOpportunity", { id: oppId });
+}
+
 export async function addCalendarEvent(event: any) {
   return callApi("addCalendarEvent", { event });
 }
