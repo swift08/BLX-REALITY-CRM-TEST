@@ -769,10 +769,14 @@ function ProjectsPage() {
 
                 {(() => {
                   const projectUnits = inventory.filter((u) => u.project_id === p.id);
-                  const displayTotalUnits = projectUnits.length > 0 ? projectUnits.length : (p.total_units ?? 0);
-                  const displayAvailableUnits = projectUnits.length > 0 
-                    ? projectUnits.filter((u) => u.status === "available").length 
-                    : (p.available_units ?? 0);
+                  const activeAvailableUnits = projectUnits.filter((u) => u.status === "available").length;
+                  const nonAvailableUnits = projectUnits.filter((u) => u.status !== "available").length;
+                  
+                  const displayAvailableUnits = Math.max(
+                    activeAvailableUnits,
+                    Math.max(0, (p.available_units ?? 0) - nonAvailableUnits)
+                  );
+                  const displayTotalUnits = Math.max(projectUnits.length, p.total_units ?? 0);
 
                   return (
                     <div className="flex items-center justify-between border-t border-dashed pt-4 mt-2">
