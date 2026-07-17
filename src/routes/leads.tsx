@@ -1940,9 +1940,9 @@ function Customer360Workspace({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <option value="hot">🔥 Hot</option>
-                          <option value="warm">⚡ Warm</option>
-                          <option value="cold">❄️ Cold</option>
+                          <SelectItem value="hot">🔥 Hot</SelectItem>
+                          <SelectItem value="warm">⚡ Warm</SelectItem>
+                          <SelectItem value="cold">❄️ Cold</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
