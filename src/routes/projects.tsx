@@ -13,6 +13,7 @@ import {
   updateProject,
   uploadProjectFile,
   addDeveloper,
+  useInventory,
 } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { can } from "@/lib/permissions";
@@ -222,6 +223,7 @@ function ProjectsPage() {
   const qc = useQueryClient();
   const { data: projects = [], isLoading } = useProjects();
   const { data: developers = [] } = useDevelopers();
+  const { data: inventory = [] } = useInventory();
   const { role } = useAuth();
 
   const [open, setOpen] = useState(false);
@@ -765,24 +767,34 @@ function ProjectsPage() {
                   <span className="font-semibold text-primary">{p.price_range || "—"}</span>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-dashed pt-4 mt-2">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                      Available Units
-                    </span>
-                    <span className="text-lg font-bold text-foreground mt-0.5">
-                      {p.available_units ?? 0}
-                    </span>
-                  </div>
-                  <div className="flex flex-col text-right">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                      Total Units
-                    </span>
-                    <span className="text-sm font-semibold text-muted-foreground mt-1">
-                      {p.total_units ?? 0}
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const projectUnits = inventory.filter((u) => u.project_id === p.id);
+                  const displayTotalUnits = projectUnits.length > 0 ? projectUnits.length : (p.total_units ?? 0);
+                  const displayAvailableUnits = projectUnits.length > 0 
+                    ? projectUnits.filter((u) => u.status === "available").length 
+                    : (p.available_units ?? 0);
+
+                  return (
+                    <div className="flex items-center justify-between border-t border-dashed pt-4 mt-2">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                          Available Units
+                        </span>
+                        <span className="text-lg font-bold text-foreground mt-0.5">
+                          {displayAvailableUnits}
+                        </span>
+                      </div>
+                      <div className="flex flex-col text-right">
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                          Total Units
+                        </span>
+                        <span className="text-sm font-semibold text-muted-foreground mt-1">
+                          {displayTotalUnits}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="text-[10px] font-medium text-muted-foreground bg-muted/20 p-2 rounded-xl flex justify-between items-center">
                   <span>Files Catalog:</span>
