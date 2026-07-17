@@ -398,17 +398,30 @@ export default async function handler(req: any, res: any) {
       case "getLeads": {
         const { data, error } = await supabase
           .from("customers")
-          .select("*, opportunities(*), activities(*), communications(*), documents(*), notes(*)")
+          .select("*, opportunities(*, bookings(*, invoices(*, payments(*)))), activities(*), communications(*), documents(*), notes(*)")
           .order("created_at", { ascending: false });
         if (error) return res.status(400).json({ error: error.message });
 
         const mapped = (data || []).map((c: any) => ({
           ...c,
-          opportunities: (c.opportunities || []).map((o: any) => ({
-            ...o,
-            customerId: o.customer_id,
-            projectId: o.project_id,
-          })),
+          opportunities: (c.opportunities || []).map((o: any) => {
+            const bookingsMapped = (o.bookings || []).map((b: any) => ({
+              ...b,
+              payment_status: b.payment_status,
+              invoices: (b.invoices || []).map((inv: any) => ({
+                ...inv,
+                dueDate: inv.due_date,
+                payments: inv.payments || []
+              }))
+            }));
+            return {
+              ...o,
+              customerId: o.customer_id,
+              projectId: o.project_id,
+              bookings: bookingsMapped,
+              booking: bookingsMapped[0] || null
+            };
+          }),
         }));
         return res.status(200).json(mapped);
       }
@@ -454,6 +467,24 @@ export default async function handler(req: any, res: any) {
           .order("timestamp", { ascending: false });
         if (error) return res.status(400).json({ error: error.message });
         return res.status(200).json(data || []);
+      }
+      case "getCalendarEvents": {
+        const { data, error } = await supabase
+          .from("calendar_events")
+          .select("*")
+          .order("start_time", { ascending: true });
+        if (error) return res.status(400).json({ error: error.message });
+        const mapped = (data || []).map((e: any) => ({
+          id: e.id,
+          type: e.type,
+          title: e.title,
+          start: e.start_time,
+          end: e.end_time,
+          customerId: e.customer_id,
+          salesPerson: e.sales_person,
+          details: e.details,
+        }));
+        return res.status(200).json(mapped);
       }
       case "getSettings": {
         const { data, error } = await supabase.from("settings").select("*").maybeSingle();
@@ -1084,102 +1115,188 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ success: true });
       }
       case "cancelBooking": {
-        const { leadId } = payload;
-        const { data: unit } = await supabase
-          .from("inventory")
-          .select("*")
-          .eq("reserved_by", leadId)
-          .single();
-        if (unit) {
-          await supabase
-            .from("inventory")
-            .update({ status: "available", reserved_by: null })
-            .eq("id", unit.id);
+        const { leadId, bookingId } = payload;
+        let unitId = "";
+        let opportunityId = "";
+        let actualBookingId = bookingId;
 
-          const { data: cust } = await supabase
-            .from("customers")
-            .select("*, opportunities(*)")
-            .eq("id", leadId)
-            .single();
-          if (cust && cust.opportunities && cust.opportunities.length > 0) {
-            const activeOpp =
-              cust.opportunities.find((o: any) => o.id === cust.activeOpportunityId) ||
-              cust.opportunities[0];
-
-            const { data: b } = await supabase
-              .from("bookings")
-              .select("id")
-              .eq("opportunity_id", activeOpp.id)
-              .single();
-            if (b) {
-              await supabase.from("bookings").update({ payment_status: "void" }).eq("id", b.id);
-            }
-            await supabase
-              .from("opportunities")
-              .update({ stage: "negotiation" })
-              .eq("id", activeOpp.id);
+        if (actualBookingId) {
+          const { data: b } = await supabase
+            .from("bookings")
+            .select("unit_id, opportunity_id")
+            .eq("id", actualBookingId)
+            .maybeSingle();
+          if (b) {
+            unitId = b.unit_id;
+            opportunityId = b.opportunity_id;
           }
+        }
 
-          await publishEvent("BOOKING_VOIDED", leadId, { unitNumber: unit.unit_number }, actorName);
+        // Fallback if no bookingId is provided
+        if (!unitId) {
+          const { data: units } = await supabase
+            .from("inventory")
+            .select("id")
+            .eq("reserved_by", leadId);
+          if (units && units.length > 0) {
+            unitId = units[0].id;
+          }
+        }
+
+        if (unitId) {
+          const { data: unit } = await supabase
+            .from("inventory")
+            .select("*")
+            .eq("id", unitId)
+            .maybeSingle();
+
+          if (unit) {
+            await supabase
+              .from("inventory")
+              .update({ status: "available", reserved_by: null })
+              .eq("id", unit.id);
+
+            // Fetch target opportunity and booking if not resolved yet
+            if (!actualBookingId || !opportunityId) {
+              const { data: cust } = await supabase
+                .from("customers")
+                .select("*, opportunities(*)")
+                .eq("id", leadId)
+                .maybeSingle();
+              if (cust && cust.opportunities && cust.opportunities.length > 0) {
+                const activeOpp =
+                  cust.opportunities.find((o: any) => o.id === cust.activeOpportunityId) ||
+                  cust.opportunities[0];
+                opportunityId = activeOpp.id;
+
+                const { data: b } = await supabase
+                  .from("bookings")
+                  .select("id")
+                  .eq("opportunity_id", activeOpp.id)
+                  .eq("unit_id", unit.id)
+                  .maybeSingle();
+                if (b) actualBookingId = b.id;
+              }
+            }
+
+            if (actualBookingId) {
+              await supabase.from("bookings").update({ payment_status: "void" }).eq("id", actualBookingId);
+            }
+            if (opportunityId) {
+              await supabase
+                .from("opportunities")
+                .update({ stage: "negotiation" })
+                .eq("id", opportunityId);
+            }
+
+            await publishEvent("BOOKING_VOIDED", leadId, { unitNumber: unit.unit_number }, actorName);
+          }
         }
         return res.status(200).json({ success: true });
       }
       case "confirmBookingPayment": {
-        const { leadId } = payload;
-        const { data: unit } = await supabase
-          .from("inventory")
-          .select("*")
-          .eq("reserved_by", leadId)
-          .single();
-        if (unit) {
-          await supabase.from("inventory").update({ status: "sold" }).eq("id", unit.id);
+        const { leadId, bookingId } = payload;
+        let unitId = "";
+        let opportunityId = "";
+        let actualBookingId = bookingId;
+        let bookingAmount = 0;
 
-          const { data: cust } = await supabase
-            .from("customers")
-            .select("*, opportunities(*)")
-            .eq("id", leadId)
-            .single();
-          if (cust && cust.opportunities && cust.opportunities.length > 0) {
-            const activeOpp =
-              cust.opportunities.find((o: any) => o.id === cust.activeOpportunityId) ||
-              cust.opportunities[0];
+        if (actualBookingId) {
+          const { data: b } = await supabase
+            .from("bookings")
+            .select("unit_id, opportunity_id, amount")
+            .eq("id", actualBookingId)
+            .maybeSingle();
+          if (b) {
+            unitId = b.unit_id;
+            opportunityId = b.opportunity_id;
+            bookingAmount = b.amount;
+          }
+        }
 
-            const { data: b } = await supabase
-              .from("bookings")
-              .select("id")
-              .eq("opportunity_id", activeOpp.id)
-              .single();
-            if (b) {
+        // Fallback if no bookingId is provided
+        if (!unitId) {
+          const { data: units } = await supabase
+            .from("inventory")
+            .select("id, price")
+            .eq("reserved_by", leadId);
+          if (units && units.length > 0) {
+            unitId = units[0].id;
+            bookingAmount = units[0].price;
+          }
+        }
+
+        if (unitId) {
+          const { data: unit } = await supabase
+            .from("inventory")
+            .select("*")
+            .eq("id", unitId)
+            .maybeSingle();
+
+          if (unit) {
+            await supabase.from("inventory").update({ status: "sold" }).eq("id", unit.id);
+
+            // Fetch target opportunity and booking if not resolved yet
+            if (!actualBookingId || !opportunityId) {
+              const { data: cust } = await supabase
+                .from("customers")
+                .select("*, opportunities(*)")
+                .eq("id", leadId)
+                .maybeSingle();
+              if (cust && cust.opportunities && cust.opportunities.length > 0) {
+                const activeOpp =
+                  cust.opportunities.find((o: any) => o.id === cust.activeOpportunityId) ||
+                  cust.opportunities[0];
+                opportunityId = activeOpp.id;
+
+                const { data: b } = await supabase
+                  .from("bookings")
+                  .select("id, amount")
+                  .eq("opportunity_id", activeOpp.id)
+                  .eq("unit_id", unit.id)
+                  .maybeSingle();
+                if (b) {
+                  actualBookingId = b.id;
+                  bookingAmount = b.amount;
+                }
+              }
+            }
+
+            if (actualBookingId) {
               await supabase
                 .from("bookings")
                 .update({ payment_status: "completed" })
-                .eq("id", b.id);
+                .eq("id", actualBookingId);
 
               const { data: inv } = await supabase
                 .from("invoices")
                 .select("id")
-                .eq("booking_id", b.id)
-                .single();
+                .eq("booking_id", actualBookingId)
+                .maybeSingle();
               if (inv) {
                 await supabase.from("invoices").update({ status: "paid" }).eq("id", inv.id);
                 await supabase.from("payments").insert({
                   invoice_id: inv.id,
-                  amount: unit.price,
+                  amount: bookingAmount,
                   reference: `TXN-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
                 });
               }
             }
-            await supabase
-              .from("opportunities")
-              .update({ stage: "converted" })
-              .eq("id", activeOpp.id);
+
+            if (opportunityId) {
+              await supabase
+                .from("opportunities")
+                .update({ stage: "converted" })
+                .eq("id", opportunityId);
+            }
+
+            await publishEvent(
+              "PAYMENT_RECEIVED",
+              leadId,
+              { unitNumber: unit.unit_number },
+              actorName,
+            );
           }
-          await publishEvent(
-            "PAYMENT_RECEIVED",
-            leadId,
-            { unitNumber: unit.unit_number },
-            actorName,
-          );
         }
         return res.status(200).json({ success: true });
       }
@@ -1194,11 +1311,12 @@ export default async function handler(req: any, res: any) {
           const activeOpp =
             cust.opportunities.find((o: any) => o.id === cust.activeOpportunityId) ||
             cust.opportunities[0];
-          const { data: b } = await supabase
+          const { data: bookingsList } = await supabase
             .from("bookings")
             .select("id")
             .eq("opportunity_id", activeOpp.id)
-            .single();
+            .order("booking_date", { ascending: false });
+          const b = bookingsList && bookingsList[0];
           if (b) {
             const { data, error } = await supabase
               .from("bookings")

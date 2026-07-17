@@ -52,6 +52,27 @@ function InventoryPage() {
     selectedProj === "all" ? undefined : selectedProj,
   );
 
+  // Group inventory by project_id and sort groups based on project list order
+  const groupedInventory = inventory.reduce((acc: Record<string, typeof inventory>, unit) => {
+    const projId = unit.project_id || "unmapped";
+    if (!acc[projId]) {
+      acc[projId] = [];
+    }
+    acc[projId].push(unit);
+    return acc;
+  }, {});
+
+  const sortedGroupedEntries = Object.entries(groupedInventory).sort(([aId], [bId]) => {
+    if (aId === "unmapped") return 1;
+    if (bId === "unmapped") return -1;
+    const indexA = projects.findIndex((p) => p.id === aId);
+    const indexB = projects.findIndex((p) => p.id === bId);
+    if (indexA === -1 && indexB === -1) return 0;
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
+
   // Add unit dialog state
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -168,7 +189,7 @@ function InventoryPage() {
       title="Unit Inventory Management"
       subtitle="Real-time status tracking of configuration units across projects"
     >
-      <div className="flex flex-row items-center justify-between pb-2 flex-wrap gap-4">
+      <div className="flex flex-row items-center justify-between pb-4 flex-wrap gap-4 border-b border-border/60 mb-6">
         <div className="flex items-center gap-3">
           <Select value={selectedProj} onValueChange={setSelectedProj}>
             <SelectTrigger className="w-56 h-9 text-xs">
@@ -185,10 +206,25 @@ function InventoryPage() {
           </Select>
         </div>
 
+        <div className="flex items-center gap-4 text-xs font-semibold bg-muted/40 border px-4 py-1.5 rounded-lg shadow-sm">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded bg-emerald-500" /> Available
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded bg-amber-400 animate-pulse" /> Pending
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded bg-amber-600" /> Reserved
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded bg-rose-500" /> Sold
+          </span>
+        </div>
+
         {canAddUnit && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="gap-1.5">
+              <Button size="sm" className="gap-1.5 h-9">
                 <Plus className="h-4 w-4" /> Add Unit
               </Button>
             </DialogTrigger>
@@ -274,58 +310,69 @@ function InventoryPage() {
         )}
       </div>
 
-      <Card className="border-border/60">
-        <CardHeader className="border-b py-4 px-5">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Grid3X3 className="h-4.5 w-4.5 text-muted-foreground" />
-              Units Grid Layout (Interactive Detail View)
-            </CardTitle>
-
-            <div className="flex items-center gap-4 text-xs font-semibold">
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-emerald-500" /> Available
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-amber-400 animate-pulse" /> Pending Reservation
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-amber-600" /> Reserved
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-rose-500" /> Sold / Booked
-              </span>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-6">
-          {isLoading ? (
-            <p className="text-xs text-muted-foreground text-center py-6">Loading inventory...</p>
-          ) : inventory.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-12">
+      {isLoading ? (
+        <Card className="border-border/60 shadow-sm">
+          <CardContent className="p-12 text-center">
+            <p className="text-xs text-muted-foreground">Loading inventory...</p>
+          </CardContent>
+        </Card>
+      ) : sortedGroupedEntries.length === 0 ? (
+        <Card className="border-border/60 shadow-sm">
+          <CardContent className="p-12 text-center">
+            <p className="text-xs text-muted-foreground">
               No units mapped under the selected project.
             </p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {inventory.map((u) => (
-                <div
-                  key={u.id}
-                  onClick={() => handleUnitClick(u)}
-                  className={`p-4 rounded-xl border text-xs font-semibold text-center flex flex-col justify-between h-28 shadow-sm transition-all duration-200 cursor-pointer hover:-translate-y-0.5 hover:shadow ${getStatusColor(u.status)}`}
-                >
-                  <div className="text-[10px] uppercase font-bold tracking-wider opacity-85">
-                    Unit Number
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {sortedGroupedEntries.map(([projId, units]) => {
+            const project = projects.find((p) => p.id === projId);
+            const projectName = project ? project.name : "Unmapped Units";
+            const projectLocation = project ? project.location : "";
+
+            return (
+              <Card key={projId} className="border-border/60 shadow-sm overflow-hidden">
+                <CardHeader className="border-b py-3.5 px-5 bg-muted/20">
+                  <CardTitle className="text-xs font-semibold flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-foreground">
+                      <Building2 className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-bold tracking-tight">{projectName}</span>
+                      {projectLocation && (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          ({projectLocation})
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[10px] font-semibold text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full border">
+                      {units.length} {units.length === 1 ? "Unit" : "Units"}
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {units.map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => handleUnitClick(u)}
+                        className={`p-4 rounded-xl border text-xs font-semibold text-center flex flex-col justify-between h-28 shadow-sm transition-all duration-200 cursor-pointer hover:-translate-y-0.5 hover:shadow ${getStatusColor(u.status)}`}
+                      >
+                        <div className="text-[10px] uppercase font-bold tracking-wider opacity-85">
+                          Unit Number
+                        </div>
+                        <div className="text-sm font-extrabold tracking-tight mt-1">{u.unit_number}</div>
+                        <div className="mt-2 text-[10px] font-medium opacity-90 border-t border-white/20 pt-1.5">
+                          {u.configuration} · {(u.price / 10000000).toFixed(2)} Cr
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="text-sm font-extrabold tracking-tight mt-1">{u.unit_number}</div>
-                  <div className="mt-2 text-[10px] font-medium opacity-90 border-t border-white/20 pt-1.5">
-                    {u.configuration} · {(u.price / 10000000).toFixed(2)} Cr
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* Interactive Unit Editor & Details Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

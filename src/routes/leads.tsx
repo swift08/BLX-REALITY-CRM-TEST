@@ -992,6 +992,7 @@ function Customer360Workspace({
     activeOpp?.projectId || "none",
   );
   const { data: projUnits = [] } = useInventory(selectedProjForBooking);
+  const { data: allUnits = [] } = useInventory();
   const [selectedUnitId, setSelectedUnitId] = useState("");
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -1196,7 +1197,8 @@ function Customer360Workspace({
   const handleCancelReserve = async () => {
     if (confirm("Cancel this booking holding lock and release the unit back to inventory?")) {
       try {
-        await cancelBooking(customer.id);
+        const activeBookingId = activeOpp?.booking?.id;
+        await cancelBooking(customer.id, activeBookingId);
         toast.success("Reservation voided.");
         qc.invalidateQueries({ queryKey: ["leads"] });
         qc.invalidateQueries({ queryKey: ["inventory"] });
@@ -1206,9 +1208,10 @@ function Customer360Workspace({
     }
   };
 
-  const handleVerifyPayment = async () => {
+  const handleVerifyPayment = async (bookingId?: string) => {
     try {
-      await confirmBookingPayment(customer.id);
+      const activeBookingId = bookingId || activeOpp?.booking?.id;
+      await confirmBookingPayment(customer.id, activeBookingId);
       toast.success("Invoice cleared and Unit sold! Opportunity converted.");
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["inventory"] });
@@ -1454,34 +1457,6 @@ function Customer360Workspace({
                 >
                   {customer.priority_score ?? 50}/100
                 </span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-muted-foreground">Customer Health Index</span>
-                  <span
-                    className={
-                      (customer.health_score ?? 80) > 75
-                        ? "text-emerald-600 font-bold"
-                        : (customer.health_score ?? 80) > 45
-                          ? "text-amber-500 font-bold"
-                          : "text-red-500 font-bold"
-                    }
-                  >
-                    {customer.health_score ?? 80}%
-                  </span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-300 ${
-                      (customer.health_score ?? 80) > 75
-                        ? "bg-emerald-500"
-                        : (customer.health_score ?? 80) > 45
-                          ? "bg-amber-500"
-                          : "bg-red-500"
-                    }`}
-                    style={{ width: `${customer.health_score ?? 80}%` }}
-                  />
-                </div>
               </div>
             </div>
           </div>
@@ -2500,7 +2475,7 @@ function Customer360Workspace({
 
               {/* TAB 9: BOOKINGS */}
               <TabsContent value="bookings" className="m-0 space-y-4">
-                {!activeOpp?.booking ? (
+                {(!activeOpp?.bookings || activeOpp.bookings.length === 0) ? (
                   <div className="max-w-xl p-4 border rounded-xl bg-card space-y-4">
                     <h3 className="font-bold text-xs uppercase tracking-wider text-primary flex items-center gap-1">
                       <DollarSign className="h-4 w-4" /> Reserve Property Unit holding
@@ -2566,32 +2541,131 @@ function Customer360Workspace({
                     </Button>
                   </div>
                 ) : (
-                  <div className="max-w-xl p-4 border border-amber-500/20 bg-amber-500/[0.01] rounded-xl space-y-3">
-                    <h3 className="font-bold text-xs text-amber-500 uppercase tracking-wider">
-                      Unit Hold Booking Active
-                    </h3>
-                    <div className="text-xs grid grid-cols-2 gap-y-1.5 max-w-xs">
-                      <span className="font-medium text-muted-foreground">Allocated Unit:</span>
-                      <span className="font-bold font-mono">{activeOpp.booking.unit_id}</span>
-                      <span className="font-medium text-muted-foreground">Holding Amount:</span>
-                      <span className="font-bold text-foreground">
-                        ₹{activeOpp.booking.amount.toLocaleString("en-IN")}
-                      </span>
-                      <span className="font-medium text-muted-foreground">Hold Status:</span>
-                      <span className="font-semibold text-amber-600 capitalize">
-                        {activeOpp.booking.payment_status}
-                      </span>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center max-w-xl pb-2">
+                      <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
+                        Active Unit Hold Bookings ({activeOpp.bookings.length})
+                      </h3>
                     </div>
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-destructive hover:bg-destructive/5"
-                        onClick={handleCancelReserve}
-                      >
-                        Release Holding
-                      </Button>
+
+                    {activeOpp.bookings.map((booking: any) => {
+                      const resolvedUnitNumber = allUnits.find((u) => u.id === booking.unit_id)?.unit_number || booking.unit_id;
+                      return (
+                        <div
+                          key={booking.id}
+                          className="max-w-xl p-4 border border-amber-500/20 bg-amber-500/[0.01] rounded-xl space-y-3 shadow-xs"
+                        >
+                          <h4 className="font-bold text-xs text-amber-500 uppercase tracking-wider flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                            Unit Hold Booking Active: #BK-{booking.id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase()}
+                          </h4>
+                          <div className="text-xs grid grid-cols-2 gap-y-1.5 max-w-xs text-left">
+                            <span className="font-medium text-muted-foreground">Allocated Unit:</span>
+                            <span className="font-bold font-mono text-foreground">{resolvedUnitNumber}</span>
+                            <span className="font-medium text-muted-foreground">Holding Amount:</span>
+                            <span className="font-bold text-foreground">
+                              ₹{booking.amount.toLocaleString("en-IN")}
+                            </span>
+                            <span className="font-medium text-muted-foreground">Hold Status:</span>
+                            <span className="font-bold text-amber-600 capitalize">
+                              {booking.payment_status}
+                            </span>
+                          </div>
+                          <div className="flex gap-2 pt-2">
+                            {booking.payment_status === "pending" && (
+                              <Button
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                                onClick={() => handleVerifyPayment(booking.id)}
+                              >
+                                Confirm & Verify Payment
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-destructive hover:bg-destructive/5"
+                              onClick={async () => {
+                                if (confirm(`Cancel booking for Unit ${resolvedUnitNumber} and release back to available?`)) {
+                                  try {
+                                    await cancelBooking(customer.id, booking.id);
+                                    toast.success(`Booking voided for Unit ${resolvedUnitNumber}.`);
+                                    qc.invalidateQueries({ queryKey: ["leads"] });
+                                    qc.invalidateQueries({ queryKey: ["inventory"] });
+                                  } catch (err: any) {
+                                    toast.error(err.message);
+                                  }
+                                }
+                              }}
+                            >
+                              Release Holding
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Reserve another unit dialog option */}
+                    <div className="mt-4 pt-4 border-t max-w-xl">
+                      <details className="group border rounded-xl bg-card">
+                        <summary className="p-3 text-xs font-bold text-muted-foreground cursor-pointer flex justify-between items-center uppercase tracking-wider select-none">
+                          ➕ Reserve Another Unit holding
+                        </summary>
+                        <div className="p-4 border-t space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5 text-left">
+                              <Label>Select Project</Label>
+                              <Select
+                                value={selectedProjForBooking}
+                                onValueChange={(v) => {
+                                  setSelectedProjForBooking(v);
+                                  setSelectedUnitId("");
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {projects.map((p) => (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5 text-left">
+                              <Label>Select Available Unit *</Label>
+                              <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {projUnits.filter((u) => u.status === "available").length === 0 ? (
+                                    <SelectItem value="no_units" disabled>
+                                      No available units found
+                                    </SelectItem>
+                                  ) : (
+                                    projUnits
+                                      .filter((u) => u.status === "available")
+                                      .map((u) => (
+                                        <SelectItem key={u.id} value={u.id}>
+                                          {u.unit_number} ({u.configuration} -{" "}
+                                          {(u.price / 10000000).toFixed(2)} Cr)
+                                        </SelectItem>
+                                      ))
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <Button onClick={handleReserve} disabled={!selectedUnitId}>
+                            Confirm Additional Unit Holding
+                          </Button>
+                        </div>
+                      </details>
                     </div>
+
                   </div>
                 )}
               </TabsContent>
@@ -2602,74 +2676,80 @@ function Customer360Workspace({
                   <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
                     Billing Statements & Invoices
                   </h3>
-                  {activeOpp?.booking?.invoices?.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="p-4 border rounded-xl bg-card text-xs flex justify-between items-center shadow-sm"
-                    >
-                      <div className="space-y-1">
-                        <div className="font-bold text-foreground flex items-center gap-2">
-                          <span>Invoice #{inv.id}</span>
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase ${
-                              inv.status === "paid"
-                                ? "bg-emerald-500/10 text-emerald-500"
-                                : "bg-amber-500/10 text-amber-500"
-                            }`}
-                          >
-                            {inv.status}
-                          </span>
+                  {activeOpp?.bookings?.flatMap((b: any) => (b.invoices || []).map((inv: any) => ({ ...inv, unit_id: b.unit_id }))).map((inv: any) => {
+                    const resolvedUnitNum = allUnits.find((u) => u.id === inv.unit_id)?.unit_number || "Unit";
+                    return (
+                      <div
+                        key={inv.id}
+                        className="p-4 border rounded-xl bg-card text-xs flex justify-between items-center shadow-sm"
+                      >
+                        <div className="space-y-1">
+                          <div className="font-bold text-foreground flex items-center gap-2">
+                            <span>Invoice #{inv.id.replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase()}</span>
+                            <span className="text-[10px] text-muted-foreground font-semibold">
+                              (Unit: {resolvedUnitNum})
+                            </span>
+                            <span
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase ${
+                                inv.status === "paid"
+                                  ? "bg-emerald-500/10 text-emerald-500"
+                                  : "bg-amber-500/10 text-amber-500"
+                              }`}
+                            >
+                              {inv.status}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground">
+                            Due: {new Date(inv.dueDate).toLocaleDateString()}
+                          </p>
                         </div>
-                        <p className="text-muted-foreground">
-                          Due: {new Date(inv.dueDate).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold text-foreground text-sm">
-                          ₹{inv.amount.toLocaleString("en-IN")}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1.5 justify-end">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[10px] gap-1 font-semibold"
-                            onClick={async () => {
-                              try {
-                                toast.loading("Generating PDF Tax Invoice...", { id: "pdf-gen" });
-                                await downloadPdfInvoice({
-                                  bookingId: activeOpp?.booking?.id,
-                                  leadId: customer.id,
-                                  customerName: customer.name,
-                                  customerPhone: customer.phone,
-                                  customerEmail: customer.email || undefined,
-                                  projectName: activeOpp?.projectId || "BLX Realty Project",
-                                  unitNumber: activeOpp?.booking?.unit_id || "Allocated Unit",
-                                  amount: inv.amount,
-                                  paymentStatus: inv.status,
-                                  bookingDate: activeOpp?.booking?.booking_date,
-                                });
-                                toast.success("Official PDF Tax Invoice downloaded!", { id: "pdf-gen" });
-                              } catch (err: any) {
-                                toast.error(err.message || "Failed to generate PDF", { id: "pdf-gen" });
-                              }
-                            }}
-                          >
-                            <FileText className="h-3 w-3" /> Download PDF
-                          </Button>
-                          {inv.status === "unpaid" && can(role).approveBookingRequest() && (
+                        <div className="text-right">
+                          <div className="font-bold text-foreground text-sm">
+                            ₹{inv.amount.toLocaleString("en-IN")}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1.5 justify-end">
                             <Button
                               size="sm"
-                              className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white"
-                              onClick={handleVerifyPayment}
+                              variant="outline"
+                              className="h-7 text-[10px] gap-1 font-semibold"
+                              onClick={async () => {
+                                try {
+                                  toast.loading("Generating PDF Tax Invoice...", { id: "pdf-gen" });
+                                  await downloadPdfInvoice({
+                                    bookingId: inv.booking_id,
+                                    leadId: customer.id,
+                                    customerName: customer.name,
+                                    customerPhone: customer.phone,
+                                    customerEmail: customer.email || undefined,
+                                    projectName: activeOpp?.projectId || "BLX Realty Project",
+                                    unitNumber: resolvedUnitNum,
+                                    amount: inv.amount,
+                                    paymentStatus: inv.status,
+                                    bookingDate: new Date().toISOString(),
+                                  });
+                                  toast.success("Official PDF Tax Invoice downloaded!", { id: "pdf-gen" });
+                                } catch (err: any) {
+                                  toast.error(err.message || "Failed to generate PDF", { id: "pdf-gen" });
+                                }
+                              }}
                             >
-                              Clear invoice
+                              <FileText className="h-3 w-3" /> Download PDF
                             </Button>
-                          )}
+                            {inv.status === "unpaid" && can(role).approveBookingRequest() && (
+                              <Button
+                                size="sm"
+                                className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                                onClick={() => handleVerifyPayment(inv.booking_id)}
+                              >
+                                Clear invoice
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                  {(!activeOpp?.booking || !activeOpp.booking.invoices) && (
+                    );
+                  })}
+                  {(!activeOpp?.bookings || activeOpp.bookings.flatMap((b: any) => b.invoices || []).length === 0) && (
                     <p className="text-xs text-muted-foreground">
                       No invoices issued. Reserve a unit first.
                     </p>
@@ -2683,27 +2763,36 @@ function Customer360Workspace({
                   <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
                     Settled Payments Ledger
                   </h3>
-                  {activeOpp?.booking?.invoices
-                    ?.flatMap((inv) => inv.payments || [])
-                    .map((pay) => (
-                      <div
-                        key={pay.id}
-                        className="p-3 border border-emerald-500/10 bg-emerald-500/[0.01] rounded-xl text-xs flex justify-between items-center"
-                      >
-                        <div>
-                          <div className="font-bold text-foreground">Ref: {pay.reference}</div>
-                          <span className="text-[10px] text-muted-foreground">
-                            Date: {new Date(pay.date).toLocaleString()}
-                          </span>
+                  {activeOpp?.bookings
+                    ?.flatMap((b: any) => 
+                      (b.invoices || []).flatMap((inv: any) => 
+                        (inv.payments || []).map((pay: any) => ({ ...pay, unit_id: b.unit_id }))
+                      )
+                    )
+                    ?.map((pay: any) => {
+                      const resolvedUnitNum = allUnits.find((u) => u.id === pay.unit_id)?.unit_number || "Unit";
+                      return (
+                        <div
+                          key={pay.id}
+                          className="p-3 border border-emerald-500/10 bg-emerald-500/[0.01] rounded-xl text-xs flex justify-between items-center"
+                        >
+                          <div>
+                            <div className="font-bold text-foreground">Ref: {pay.reference}</div>
+                            <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                              <span>Unit: {resolvedUnitNum}</span>
+                              <span>•</span>
+                              <span>Date: {new Date(pay.date).toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <div className="font-bold text-emerald-600">
+                            +₹{pay.amount.toLocaleString("en-IN")}
+                          </div>
                         </div>
-                        <div className="font-bold text-emerald-600">
-                          +₹{pay.amount.toLocaleString("en-IN")}
-                        </div>
-                      </div>
-                    ))}
-                  {(!activeOpp?.booking ||
-                    !activeOpp.booking.invoices?.some(
-                      (i) => i.payments && i.payments.length > 0,
+                      );
+                    })}
+                  {(!activeOpp?.bookings ||
+                    !activeOpp.bookings.some((b: any) => 
+                      b.invoices?.some((inv: any) => inv.payments && inv.payments.length > 0)
                     )) && <p className="text-xs text-muted-foreground">No payments cleared yet.</p>}
                 </div>
               </TabsContent>

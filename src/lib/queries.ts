@@ -115,6 +115,7 @@ export interface Opportunity {
   created_at: string;
   lost_reason?: string;
   booking?: Booking | null;
+  bookings?: Booking[];
 }
 
 export interface Activity {
@@ -467,6 +468,7 @@ export function useLeads() {
           project_id: activeOpp ? activeOpp.projectId : null,
           projects: null,
           booking: activeOpp ? activeOpp.booking : null,
+          bookings: activeOpp ? (activeOpp.bookings || []) : [],
           lost_reason: activeOpp ? activeOpp.lost_reason : undefined,
         };
       });
@@ -867,12 +869,12 @@ export async function reserveUnit(unitId: string, leadId: string) {
   return callApi("reserveUnit", { unitId, leadId });
 }
 
-export async function cancelBooking(leadId: string) {
-  return callApi("cancelBooking", { leadId });
+export async function cancelBooking(leadId: string, bookingId?: string) {
+  return callApi("cancelBooking", { leadId, bookingId });
 }
 
-export async function confirmBookingPayment(leadId: string) {
-  return callApi("confirmBookingPayment", { leadId });
+export async function confirmBookingPayment(leadId: string, bookingId?: string) {
+  return callApi("confirmBookingPayment", { leadId, bookingId });
 }
 
 export async function updateBookingStatus(leadId: string, status: any) {
