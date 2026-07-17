@@ -29,12 +29,14 @@ import {
   completeFollowup,
   addCustomerOpportunity,
   addCustomerDocument,
+  uploadProjectFile,
   addLeadCommunicationLog,
   bulkAssignLeads,
   Customer,
   Stage,
   Temp,
 } from "@/lib/queries";
+import { downloadPdfInvoice } from "@/lib/pdf-generator";
 import { useAuth, AppRole } from "@/hooks/use-auth";
 import { can, isLeadVisible } from "@/lib/permissions";
 import { toast } from "sonner";
@@ -880,6 +882,18 @@ function CustomersPage() {
   );
 }
 
+const parseBudget = (budgetStr: string | null | undefined) => {
+  if (!budgetStr) return { num: "", unit: "Lakhs" };
+  const clean = budgetStr.replace(/[₹\s]/g, "");
+  const numMatch = clean.match(/^[0-9.]+/);
+  const num = numMatch ? numMatch[0] : "";
+  const isCr = clean.toLowerCase().includes("cr");
+  return {
+    num,
+    unit: isCr ? "Cr" : "Lakhs",
+  };
+};
+
 // Enterprise Customer 360 Workspace
 function Customer360Workspace({
   customer,
@@ -930,7 +944,9 @@ function Customer360Workspace({
   const activeOpp =
     customer.opportunities.find((o) => o.id === customer.activeOpportunityId) ||
     customer.opportunities[0];
-  const [editBudget, setEditBudget] = useState(activeOpp?.budget || "");
+  const initialBudget = parseBudget(activeOpp?.budget);
+  const [editBudgetNum, setEditBudgetNum] = useState(initialBudget.num);
+  const [editBudgetUnit, setEditBudgetUnit] = useState(initialBudget.unit);
   const [editTemp, setEditTemp] = useState<Temp>(activeOpp?.temperature || "warm");
   const [editStage, setEditStage] = useState<Stage>(activeOpp?.stage || "new");
   const [editOwner, setEditOwner] = useState(activeOpp?.owner || "Unassigned");
@@ -943,7 +959,8 @@ function Customer360Workspace({
 
   // New Opportunity fields state
   const [newProjId, setNewProjId] = useState("none");
-  const [newBudget, setNewBudget] = useState("₹2.0 Cr");
+  const [newBudgetNum, setNewBudgetNum] = useState("2.0");
+  const [newBudgetUnit, setNewBudgetUnit] = useState("Cr");
   const [newTemp, setNewTemp] = useState<Temp>("warm");
   const [newOwner, setNewOwner] = useState("Unassigned");
 
@@ -968,6 +985,7 @@ function Customer360Workspace({
   const [docCategory, setDocCategory] = useState("KYC Document");
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState("2.5 MB");
+  const [selectedDocFile, setSelectedDocFile] = useState<File | null>(null);
 
   // Booking Unit Reservation State
   const [selectedProjForBooking, setSelectedProjForBooking] = useState(
@@ -1028,7 +1046,7 @@ function Customer360Workspace({
           phone: editPhone,
           email: editEmail || null,
           source: editSource,
-          budget: editBudget || null,
+          budget: editBudgetNum ? `₹${editBudgetNum} ${editBudgetUnit}` : null,
           temperature: editTemp,
           stage: editStage,
           owner: editOwner,
@@ -1063,7 +1081,13 @@ function Customer360Workspace({
   const handleAddNewOpp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addCustomerOpportunity(customer.id, newProjId, newBudget, newTemp, newOwner);
+      await addCustomerOpportunity(
+        customer.id,
+        newProjId,
+        newBudgetNum ? `₹${newBudgetNum} ${newBudgetUnit}` : "",
+        newTemp,
+        newOwner,
+      );
       toast.success("New opportunity spawned successfully!");
       qc.invalidateQueries({ queryKey: ["leads"] });
       setActiveTab("overview");
@@ -1195,7 +1219,7 @@ function Customer360Workspace({
 
   const handleUploadDoc = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fileName.trim()) {
+    if (!fileName.trim() || !selectedDocFile) {
       toast.error("Please select a file to upload.");
       return;
     }
@@ -1205,25 +1229,52 @@ function Customer360Workspace({
       toast.error("Unsupported file type. Allowed: PDF, DOCX, PNG, JPG, voice records.");
       return;
     }
-    const sizeNum = parseFloat(fileSize) || 0;
+    const sizeNum = selectedDocFile.size / (1024 * 1024);
     if (sizeNum > 10) {
       toast.error("File size cannot exceed 10 MB limit.");
       return;
     }
 
     try {
+      toast.loading("Uploading document...", { id: "doc-upload" });
+
+      // Read file as Base64 Data URL
+      const base64Data: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(selectedDocFile);
+      });
+
+      let finalUrl = base64Data;
+      try {
+        const res = await uploadProjectFile(
+          base64Data,
+          selectedDocFile.name,
+          selectedDocFile.type || "application/octet-stream",
+          customer.id,
+        );
+        if (res && res.url) {
+          finalUrl = res.url;
+        }
+      } catch (uploadErr) {
+        // Fall back to data URL
+      }
+
       await addCustomerDocument(
         customer.id,
-        fileName,
-        "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-        Math.round(sizeNum * 1024 * 1024),
+        selectedDocFile.name,
+        finalUrl,
+        selectedDocFile.size,
         docCategory,
       );
+
       setFileName("");
-      toast.success("Document attached to profile folder.");
+      setSelectedDocFile(null);
+      toast.success("Document attached to profile folder.", { id: "doc-upload" });
       qc.invalidateQueries({ queryKey: ["leads"] });
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || "Failed to attach document", { id: "doc-upload" });
     }
   };
 
@@ -1299,9 +1350,6 @@ function Customer360Workspace({
               <Trash2 className="h-4.5 w-4.5" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-9 w-9">
-            <X className="h-5 w-5" />
-          </Button>
         </div>
       </div>
 
@@ -1333,17 +1381,44 @@ function Customer360Workspace({
           const isCompleted = sIdx < currentStepIdx;
           const isActive = sIdx === currentStepIdx;
 
+          // Creative Color Progression:
+          // Steps 0..5 (New, Assigned, Connected, Interested, Visit, Negotiation): NEVER GREEN!
+          // Steps 6 & 7 (Booking, Converted): GREEN ONLY HERE!
+          let badgeStyle = "bg-card text-muted-foreground/80 border-border/80 font-medium";
+
+          if (isActive) {
+            if (sIdx >= 6) {
+              badgeStyle =
+                "bg-emerald-600 text-white border-emerald-600 font-bold shadow-md shadow-emerald-500/25 ring-2 ring-emerald-500/30";
+            } else if (sIdx === 5) {
+              badgeStyle =
+                "bg-amber-600 text-white border-amber-600 font-bold shadow-sm shadow-amber-500/20";
+            } else if (sIdx === 3 || sIdx === 4) {
+              badgeStyle =
+                "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 font-bold shadow-sm";
+            } else {
+              badgeStyle =
+                "bg-blue-600 text-white border-blue-600 font-bold shadow-sm shadow-blue-500/20";
+            }
+          } else if (isCompleted) {
+            if (sIdx >= 6) {
+              badgeStyle =
+                "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-bold shadow-xs";
+            } else if (sIdx === 5) {
+              badgeStyle =
+                "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25 font-semibold";
+            } else if (sIdx === 3 || sIdx === 4) {
+              badgeStyle =
+                "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/25 font-semibold";
+            } else {
+              badgeStyle =
+                "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25 font-semibold";
+            }
+          }
+
           return (
             <div key={step.key} className="flex items-center gap-1.5 whitespace-nowrap">
-              <span
-                className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-all ${
-                  isCompleted
-                    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                    : isActive
-                      ? "bg-primary text-primary-foreground border-primary font-bold shadow-sm"
-                      : "bg-card text-muted-foreground border-border/80"
-                }`}
-              >
+              <span className={`text-[10px] px-2.5 py-1 rounded-full border transition-all ${badgeStyle}`}>
                 {step.label}
               </span>
               {sIdx < stepsArr.length - 1 && (
@@ -1628,7 +1703,25 @@ function Customer360Workspace({
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <Label>Budget Description</Label>
-                        <Input value={editBudget} onChange={(e) => setEditBudget(e.target.value)} />
+                        <div className="flex gap-2">
+                          <Input
+                            type="number"
+                            step="any"
+                            placeholder="e.g. 2.5 or 80"
+                            value={editBudgetNum}
+                            onChange={(e) => setEditBudgetNum(e.target.value)}
+                            className="flex-1"
+                          />
+                          <Select value={editBudgetUnit} onValueChange={setEditBudgetUnit}>
+                            <SelectTrigger className="w-[120px]">
+                              <SelectValue placeholder="Unit" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Lakhs">Lakhs</SelectItem>
+                              <SelectItem value="Cr">Crores (Cr)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                       <div className="space-y-1.5">
                         <Label>Interested Project</Label>
@@ -1842,7 +1935,25 @@ function Customer360Workspace({
                     </div>
                     <div className="space-y-1.5">
                       <Label>Opportunity Budget</Label>
-                      <Input value={newBudget} onChange={(e) => setNewBudget(e.target.value)} />
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          step="any"
+                          placeholder="e.g. 2.0"
+                          value={newBudgetNum}
+                          onChange={(e) => setNewBudgetNum(e.target.value)}
+                          className="flex-1"
+                        />
+                        <Select value={newBudgetUnit} onValueChange={setNewBudgetUnit}>
+                          <SelectTrigger className="w-[120px]">
+                            <SelectValue placeholder="Unit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Lakhs">Lakhs</SelectItem>
+                            <SelectItem value="Cr">Crores (Cr)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
 
@@ -2517,15 +2628,44 @@ function Customer360Workspace({
                         <div className="font-bold text-foreground text-sm">
                           ₹{inv.amount.toLocaleString("en-IN")}
                         </div>
-                        {inv.status === "unpaid" && can(role).approveBookingRequest() && (
+                        <div className="flex items-center gap-2 mt-1.5 justify-end">
                           <Button
                             size="sm"
-                            className="h-7 text-[10px] mt-1.5 bg-emerald-600 hover:bg-emerald-500 text-white"
-                            onClick={handleVerifyPayment}
+                            variant="outline"
+                            className="h-7 text-[10px] gap-1 font-semibold"
+                            onClick={async () => {
+                              try {
+                                toast.loading("Generating PDF Tax Invoice...", { id: "pdf-gen" });
+                                await downloadPdfInvoice({
+                                  bookingId: activeOpp?.booking?.id,
+                                  leadId: customer.id,
+                                  customerName: customer.name,
+                                  customerPhone: customer.phone,
+                                  customerEmail: customer.email || undefined,
+                                  projectName: activeOpp?.projectId || "BLX Realty Project",
+                                  unitNumber: activeOpp?.booking?.unit_id || "Allocated Unit",
+                                  amount: inv.amount,
+                                  paymentStatus: inv.status,
+                                  bookingDate: activeOpp?.booking?.booking_date,
+                                });
+                                toast.success("Official PDF Tax Invoice downloaded!", { id: "pdf-gen" });
+                              } catch (err: any) {
+                                toast.error(err.message || "Failed to generate PDF", { id: "pdf-gen" });
+                              }
+                            }}
                           >
-                            Clear invoice
+                            <FileText className="h-3 w-3" /> Download PDF
                           </Button>
-                        )}
+                          {inv.status === "unpaid" && can(role).approveBookingRequest() && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white"
+                              onClick={handleVerifyPayment}
+                            >
+                              Clear invoice
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -2599,9 +2739,11 @@ function Customer360Workspace({
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
+                            setSelectedDocFile(file);
                             setFileName(file.name);
                             setFileSize(`${(file.size / (1024 * 1024)).toFixed(2)} MB`);
                           } else {
+                            setSelectedDocFile(null);
                             setFileName("");
                             setFileSize("0 MB");
                           }
@@ -2638,6 +2780,7 @@ function Customer360Workspace({
                         </div>
                         <a
                           href={doc.url}
+                          download={doc.name}
                           target="_blank"
                           rel="noreferrer"
                           className="text-[10px] text-primary font-bold hover:underline"

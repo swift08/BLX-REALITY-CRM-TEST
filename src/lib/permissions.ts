@@ -36,26 +36,29 @@ export function can(role: AppRole | null) {
     viewAllLeads: () => isAdminOrAbove,
     /** Manager and above can view all team leads */
     viewTeamLeads: () => isManagerOrAbove,
-    /** Create a new customer record */
-    createCustomer: () => isManagerOrAbove,
+    /** Create a new customer record (Manager/Admin/SA, or Sales Exec self-assigned) */
+    createCustomer: () => true,
     /** Edit any customer details */
     editCustomer: () => isManagerOrAbove || isSalesExec,
-    /** Soft-delete (archive) a customer */
+    /** Soft-delete (archive) a customer (Super Admin and Admin only) */
     deleteCustomer: () => isAdminOrAbove,
-    /** Permanently delete from recycle bin */
-    permanentlyDeleteCustomer: () => isSuperAdmin,
-    /** Restore from recycle bin */
+    archiveCustomer: () => isAdminOrAbove,
+    /** Permanent hard-delete is NOT a UI action for ANY role */
+    permanentlyDeleteCustomer: () => false,
+    /** Restore from recycle bin (Super Admin and Admin only) */
     restoreCustomer: () => isAdminOrAbove,
     /** Assign a lead to a sales executive */
     assignLead: () => isManagerOrAbove,
-    /** Reassign a lead (change current owner) */
+    /** Reassign a lead (change current owner - Manager team-scoped, Admin company-wide) */
     reassignLead: () => isManagerOrAbove,
     /** Bulk assign multiple leads at once */
     bulkAssignLeads: () => isAdminOrAbove,
     /** Merge two duplicate customer records */
     mergeDuplicateCustomer: () => isAdminOrAbove,
-    /** Export customer list */
-    exportCustomers: () => isManagerOrAbove,
+    /** Export customer list (Manager: team, Admin/SA: company, Sales Exec: personal) */
+    exportCustomers: () => true,
+    /** Unmask sensitive client contact info (phone/email/budget) - triggers audit log for Sales Exec */
+    unmaskContactData: () => true,
 
     // ─── FOLLOW-UPS ──────────────────────────────────────────────
     /** Admin/Manager see all team follow-ups; Sales Exec sees own */
@@ -94,8 +97,10 @@ export function can(role: AppRole | null) {
     createDeveloper: () => isAdminOrAbove,
     /** Edit developer details */
     editDeveloper: () => isAdminOrAbove,
-    /** Delete a developer record */
-    deleteDeveloper: () => isSuperAdmin,
+    /** Hard-delete developer record - NOT a UI action for ANY role */
+    deleteDeveloper: () => false,
+    /** Archive developer record */
+    archiveDeveloper: () => isAdminOrAbove,
     /** Upload brochures / documents to developer */
     uploadDeveloperDocuments: () => isAdminOrAbove,
 
@@ -106,22 +111,27 @@ export function can(role: AppRole | null) {
     createProject: () => isAdminOrAbove,
     /** Edit project details */
     editProject: () => isAdminOrAbove,
-    /** Delete a project */
-    deleteProject: () => isSuperAdmin,
+    /** Hard-delete project - NOT a UI action for ANY role */
+    deleteProject: () => false,
+    /** Archive project record */
+    archiveProject: () => isAdminOrAbove,
     /** Upload floor plans / docs to project */
     uploadProjectDocuments: () => isAdminOrAbove,
 
     // ─── INVENTORY ───────────────────────────────────────────────
     /** View inventory (all roles) */
     viewInventory: () => true,
-    /** Add a new unit */
+    /** Add a new unit (Admin/SA only) */
     createUnit: () => isAdminOrAbove,
-    /** Edit unit details (config, area) */
+    /** Edit unit details (config, area, pricing) (Admin/SA only) */
     editUnit: () => isAdminOrAbove,
-    /** Delete a unit record */
-    deleteUnit: () => isSuperAdmin,
-    /** Reserve a unit for a customer */
+    /** Hard-delete unit - NOT a UI action for ANY role */
+    deleteUnit: () => false,
+    /** Archive unit record */
+    archiveUnit: () => isAdminOrAbove,
+    /** Reserve / hold a unit for a customer (Manager and above can approve hold; Sales Exec can request) */
     reserveUnit: () => isManagerOrAbove,
+    requestUnitHold: () => isSalesExec,
     /** Release a reserved unit back to available */
     releaseUnit: () => isManagerOrAbove,
     /** Mark a unit as sold */
@@ -132,10 +142,12 @@ export function can(role: AppRole | null) {
     // ─── BOOKINGS ────────────────────────────────────────────────
     /** Initiate a booking request (all roles) */
     initiateBooking: () => true,
-    /** Approve/confirm a booking request (Manager level) */
+    /** Approve/confirm a booking request (Manager level review) */
     approveBookingRequest: () => isManagerOrAbove,
     /** Final verify/confirm booking (Admin/Super Admin level) */
     finalApproveBooking: () => isAdminOrAbove,
+    /** Override approval decisions on holds, discounts, bookings (Super Admin only) */
+    overrideApproval: () => isSuperAdmin,
     /** Cancel an active booking */
     cancelBooking: () => isAdminOrAbove,
     /** Close/finalize a booking */
@@ -152,7 +164,7 @@ export function can(role: AppRole | null) {
     approveReservation: () => isManagerOrAbove,
     /** Request discount on bookings (Sales Exec) */
     requestDiscount: () => isSalesExec,
-    /** Approve discount request (Manager for own team, Admin/Super Admin for anyone) */
+    /** Approve discount request (Manager for own team, Admin final sign-off, Super Admin override) */
     approveDiscount: () => isManagerOrAbove,
 
     // ─── ANALYTICS ───────────────────────────────────────────────
@@ -172,29 +184,33 @@ export function can(role: AppRole | null) {
     exportPersonalReports: () => true,
 
     // ─── AUDIT LOGS ──────────────────────────────────────────────
-    /** View the audit log page */
-    viewAuditLogs: () => isAdminOrAbove,
-    /** Delete audit log entries (Super Admin only) */
-    deleteAuditLogs: () => isSuperAdmin,
+    /** View the audit log page (SA/Admin: all, Manager: team, Sales Exec: own action history) */
+    viewAuditLogs: () => true,
+    /** Edit audit logs - IMMUTABLE AT DATA LAYER FOR ALL ROLES */
+    editAuditLogs: () => false,
+    /** Delete audit log entries - IMMUTABLE AT DATA LAYER FOR ALL ROLES */
+    deleteAuditLogs: () => false,
     /** View team/operational logs (Managers see team, Admins see all) */
     viewTeamLogs: () => isManagerOrAbove,
 
     // ─── USER MANAGEMENT ─────────────────────────────────────────
-    /** Create a Super Admin account */
+    /** Create a Super Admin account (Super Admin only) */
     createSuperAdmin: () => isSuperAdmin,
-    /** Create an Admin account */
+    /** Create an Admin account (Super Admin only) */
     createAdmin: () => isSuperAdmin,
-    /** Create a Manager account */
+    /** Create a Manager account (Admin and Super Admin only) */
     createManager: () => isAdminOrAbove,
-    /** Create a Sales Executive account */
+    /** Create a Sales Executive account (Manager scoped to own team, Admin/SA company-wide) */
     createSalesExecutive: () => isManagerOrAbove,
-    /** Reset another user's password (Super Admin: anyone; Admin: anyone except SA; Manager: own team only) */
+    /** Reset another user's password (Super Admin: anyone; Admin: Manager/Sales Exec; Manager: own team Sales Execs) */
     resetUserPassword: () => isManagerOrAbove,
-    /** Change a user's role/promotion */
-    changeUserRole: () => isAdminOrAbove,
-    /** Delete any user account */
-    deleteUser: () => isAdminOrAbove,
-    /** Disable/deactivate a user account */
+    /** Request role promotion (Admin requesting promotion to Admin for user, needs SA approval) */
+    requestRolePromotion: () => isAdmin,
+    /** Change a user's role directly (Super Admin only) */
+    changeUserRole: () => isSuperAdmin,
+    /** Hard-delete any user account - NOT a UI action for ANY role */
+    deleteUser: () => false,
+    /** Disable/deactivate a user account (SA: all, Admin: Manager & Sales Exec only) */
     deactivateUser: () => isAdminOrAbove,
     /** Enable/reactivate a user account */
     reactivateUser: () => isAdminOrAbove,
@@ -204,18 +220,20 @@ export function can(role: AppRole | null) {
     // ─── SETTINGS ────────────────────────────────────────────────
     /** Access company configuration settings */
     accessCompanySettings: () => isAdminOrAbove,
-    /** Manage workflow automation rules */
+    /** Manage workflow automation rules (Admin and Super Admin) */
     manageWorkflowRules: () => isAdminOrAbove,
-    /** Configure SLA targets */
+    /** Configure SLA targets (Admin and Super Admin) */
     configureSLA: () => isAdminOrAbove,
     /** Manage the Team (add/edit/remove users) */
     accessTeamManagement: () => isManagerOrAbove,
-    /** Access recycle bin (Super Admin and Admin only, Managers blocked) */
+    /** Access recycle bin (Super Admin and Admin only, Managers and Sales Execs blocked) */
     accessRecycleBin: () => isAdminOrAbove,
-    /** Backup / restore the database */
+    /** Backup / restore the database (Super Admin / Infra owner only) */
     backupDatabase: () => isSuperAdmin,
-    /** Change global system security configuration */
+    /** Change global system security configuration (Super Admin only) */
     changeSecurityConfig: () => isSuperAdmin,
+    /** Role simulation mode (view-as-lower-role) (Super Admin only) */
+    simulateRole: () => isSuperAdmin,
 
     // ─── HELPERS & SCOPES ────────────────────────────────────────
     /** Returns the human-readable role label */

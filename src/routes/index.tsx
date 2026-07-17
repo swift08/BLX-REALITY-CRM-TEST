@@ -1141,7 +1141,7 @@ function Dashboard() {
                   stroke="rgba(200,200,200,0.15)"
                 />
                 <XAxis dataKey="month" tickLine={false} tickMargin={8} style={{ fontSize: 10 }} />
-                <YAxis tickLine={false} tickMargin={8} style={{ fontSize: 10 }} />
+                <YAxis allowDecimals={false} tickLine={false} tickMargin={8} style={{ fontSize: 10 }} />
                 <Tooltip
                   contentStyle={{
                     background: "rgba(0,0,0,0.8)",

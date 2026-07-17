@@ -40,9 +40,4 @@ export const followUps: any[] = [];
 
 export const projects: any[] = [];
 
-export const salesTeam = [
-  { name: "Aisha Khan", role: "Senior Executive", leads: 0, visits: 0, bookings: 0, revenue: "₹0" },
-  { name: "Vikram Singh", role: "Executive", leads: 0, visits: 0, bookings: 0, revenue: "₹0" },
-  { name: "Neha Patel", role: "Senior Executive", leads: 0, visits: 0, bookings: 0, revenue: "₹0" },
-  { name: "Rahul Desai", role: "Executive", leads: 0, visits: 0, bookings: 0, revenue: "₹0" },
-];
+export const salesTeam: any[] = [];

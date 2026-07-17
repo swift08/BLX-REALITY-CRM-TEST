@@ -42,6 +42,8 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
     temperature: "warm" as "hot" | "warm" | "cold",
     owner: "Unassigned",
   });
+  const [budgetNum, setBudgetNum] = useState("");
+  const [budgetUnit, setBudgetUnit] = useState("Lakhs");
 
   useEffect(() => {
     if (role === "sales_executive" && user) {
@@ -74,6 +76,8 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
       temperature: "warm",
       owner: role === "sales_executive" ? userFullName : "Unassigned",
     });
+    setBudgetNum("");
+    setBudgetUnit("Lakhs");
     setDupInfo(null);
   };
 
@@ -87,7 +91,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
           phone: form.phone,
           email: form.email || null,
           source: form.source,
-          budget: form.budget || null,
+          budget: budgetNum ? `₹${budgetNum} ${budgetUnit}` : null,
           temperature: form.temperature,
           stage: "new",
           project_id: form.projectId,
@@ -120,7 +124,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
           phone: form.phone,
           email: form.email || null,
           source: form.source,
-          budget: form.budget || null,
+          budget: budgetNum ? `₹${budgetNum} ${budgetUnit}` : null,
           temperature: form.temperature,
           stage: "new",
           project_id: form.projectId,
@@ -342,12 +346,26 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="lbudget">Budget Description</Label>
-              <Input
-                id="lbudget"
-                placeholder="e.g. ₹2.5 Cr or 80 Lakhs"
-                value={form.budget}
-                onChange={(e) => setForm({ ...form, budget: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="lbudget"
+                  type="number"
+                  step="any"
+                  placeholder="e.g. 2.5 or 80"
+                  value={budgetNum}
+                  onChange={(e) => setBudgetNum(e.target.value)}
+                  className="flex-1"
+                />
+                <Select value={budgetUnit} onValueChange={setBudgetUnit}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue placeholder="Unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Lakhs">Lakhs</SelectItem>
+                    <SelectItem value="Cr">Crores (Cr)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter className="pt-2">
               <Button type="submit" disabled={busy} className="w-full sm:w-auto">

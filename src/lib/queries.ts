@@ -471,9 +471,16 @@ export function useLeads() {
         };
       });
 
-      return resolved.filter((c) =>
-        isLeadVisible(activeRole as AppRole, currentUserId, c.owner_id || "unassigned"),
-      );
+      const userFullName = getCurrentUserFullName();
+      return resolved.filter((c) => {
+        const isVisible = isLeadVisible(activeRole as AppRole, currentUserId, c.owner_id || "unassigned");
+        const isNameMatch =
+          activeRole === "sales_executive" &&
+          c.owner &&
+          userFullName &&
+          c.owner.toLowerCase() === userFullName.toLowerCase();
+        return isVisible || isNameMatch;
+      });
     },
   });
 }

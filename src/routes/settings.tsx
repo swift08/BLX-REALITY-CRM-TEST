@@ -11,7 +11,6 @@ import {
   useSettings,
   useCRMUsers,
   useWorkflowRules,
-  useAuditLogs,
   saveCompanySettings,
   addCRMUser,
   updateCRMUserRole,
@@ -53,7 +52,7 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
-type SettingsTab = "company" | "team" | "security" | "audit";
+type SettingsTab = "company" | "team" | "security";
 
 function AccessDenied() {
   const { role } = useAuth();
@@ -96,7 +95,6 @@ function SettingsPage() {
     { id: "company", label: "Company", icon: Building2 },
     { id: "team", label: "Team", icon: Users },
     { id: "security", label: "Security", icon: ShieldCheck },
-    { id: "audit", label: "Audit", icon: History },
   ];
 
   return (
@@ -126,7 +124,6 @@ function SettingsPage() {
         {tab === "company" && <CompanyTab role={role} />}
         {tab === "team" && <TeamTab role={role} user={user} />}
         {tab === "security" && <SecurityTab role={role} />}
-        {tab === "audit" && <AuditTab role={role} />}
       </div>
     </AppShell>
   );
@@ -775,74 +772,4 @@ function SecurityTab({ role }: { role: AppRole | null }) {
   );
 }
 
-/* ─────────────────────────────────────────
-   AUDIT TAB
-───────────────────────────────────────── */
-function AuditTab({ role }: { role: AppRole | null }) {
-  const { data: logs = [], isLoading } = useAuditLogs();
-  const recentLogs = logs.slice(0, 30);
 
-  const actionColors: Record<string, string> = {
-    "AUTH:LOGIN_SUCCESS": "text-emerald-600",
-    "AUTH:LOGIN_FAILED": "text-red-500",
-    "AUTH:LOGOUT": "text-blue-500",
-    "SECURITY_VIOLATION:MISSING_AUTH_TOKEN": "text-red-600 font-semibold",
-    "SECURITY_VIOLATION:UNAUTHORIZED_ADMIN_ACTION": "text-red-600 font-semibold",
-    "SECURITY_VIOLATION:UNAUTHORIZED_SUPER_ADMIN_ACTION": "text-red-600 font-semibold",
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <History className="h-4 w-4 text-primary" /> Recent Audit Events
-        </CardTitle>
-        <CardDescription>Last 30 system events. View full logs in Audit Logs page.</CardDescription>
-      </CardHeader>
-      <CardContent className="p-0 overflow-x-auto">
-        {isLoading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-          </div>
-        ) : recentLogs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-            <History className="h-8 w-8 mb-2 opacity-30" />
-            <p className="text-sm">No audit events yet</p>
-          </div>
-        ) : (
-          <table className="w-full text-xs min-w-[600px]">
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider border-y bg-muted/30">
-                <th className="px-4 py-2.5 font-medium">Time</th>
-                <th className="px-3 py-2.5 font-medium">User</th>
-                <th className="px-3 py-2.5 font-medium">Action</th>
-                <th className="px-3 py-2.5 font-medium">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentLogs.map((l) => (
-                <tr key={l.id} className="border-b last:border-0 hover:bg-muted/20">
-                  <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">
-                    {new Date(l.timestamp).toLocaleString("en-IN", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
-                  </td>
-                  <td className="px-3 py-2 font-medium">{l.user}</td>
-                  <td
-                    className={`px-3 py-2 font-mono ${actionColors[l.action] || "text-foreground"}`}
-                  >
-                    {l.action}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground max-w-xs truncate">
-                    {l.new_value || l.old_value || "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
