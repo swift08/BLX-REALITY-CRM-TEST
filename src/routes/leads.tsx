@@ -1870,14 +1870,16 @@ function Customer360Workspace({
                             <CardTitle className="text-xs text-muted-foreground uppercase font-bold tracking-wider">
                               Opportunity #{idx + 1}
                             </CardTitle>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 rounded-full text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 shrink-0"
-                              onClick={() => handleDeleteOpp(opp.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            {opp.stage !== "converted" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 rounded-full text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 shrink-0"
+                                onClick={() => handleDeleteOpp(opp.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </div>
                           <h4 className="text-sm font-bold text-foreground mt-1 pr-16">
                             {proj?.name || "Unknown Project"}

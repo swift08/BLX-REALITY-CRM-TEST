@@ -1515,6 +1515,10 @@ export default async function handler(req: any, res: any) {
           .eq("id", delId)
           .single();
         
+        if (toDelete?.stage === "converted") {
+          return res.status(400).json({ error: "Converted opportunities cannot be deleted." });
+        }
+        
         // Safe pointer cleanup: check if deleted opportunity was active
         if (toDelete?.customer_id) {
           const { data: customer } = await supabase
