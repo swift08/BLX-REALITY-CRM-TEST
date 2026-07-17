@@ -717,8 +717,6 @@ function CustomersPage() {
                     <th className="px-4 py-2">Source</th>
                     <th className="px-4 py-2">Budget</th>
                     <th className="px-4 py-2">Sales Owner</th>
-                    <th className="px-4 py-2">Priority Rank</th>
-                    <th className="px-4 py-2">Health Score</th>
                     <th className="px-4 py-2">Active Stage</th>
                     <th className="px-6 py-2 text-right">Actions</th>
                   </tr>
@@ -774,32 +772,6 @@ function CustomersPage() {
                           <User className="h-3 w-3 text-muted-foreground/60" />
                           {c.owner}
                         </span>
-                      </td>
-                      <td className="px-4 py-2">
-                        <span
-                          className={`font-bold font-mono text-xs px-2 py-0.5 rounded-full ${
-                            (c.priority_score ?? 50) > 70
-                              ? "bg-red-500/10 text-red-500"
-                              : "bg-slate-500/10 text-muted-foreground"
-                          }`}
-                        >
-                          {c.priority_score ?? 50}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`font-bold text-xs ${
-                              (c.health_score ?? 80) > 75
-                                ? "text-emerald-500"
-                                : (c.health_score ?? 80) > 45
-                                  ? "text-amber-500"
-                                  : "text-red-500"
-                            }`}
-                          >
-                            {c.health_score ?? 80}%
-                          </span>
-                        </div>
                       </td>
                       <td className="px-4 py-2">
                         <StageBadge value={stageLabels[c.stage as Stage] ?? c.stage} />
