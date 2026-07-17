@@ -1652,6 +1652,9 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ success: true });
       }
       case "deleteCRMUser": {
+        if (actorRole !== "super_admin") {
+          return res.status(403).json({ error: "Only Super Admins can delete users." });
+        }
         const { id } = payload;
         const { error } = await supabase.auth.admin.deleteUser(id);
         if (error) return res.status(400).json({ error: error.message });

@@ -208,8 +208,8 @@ export function can(role: AppRole | null) {
     requestRolePromotion: () => isAdmin,
     /** Change a user's role directly (Super Admin only) */
     changeUserRole: () => isSuperAdmin,
-    /** Hard-delete any user account - NOT a UI action for ANY role */
-    deleteUser: () => false,
+    /** Hard-delete any user account - Super Admin only */
+    deleteUser: () => isSuperAdmin,
     /** Disable/deactivate a user account (SA: all, Admin: Manager & Sales Exec only) */
     deactivateUser: () => isAdminOrAbove,
     /** Enable/reactivate a user account */
