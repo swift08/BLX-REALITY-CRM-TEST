@@ -216,9 +216,12 @@ function Dashboard() {
   const visitsCompletedCount = rawCustomers.filter(
     (c) => c.stage === "site_visit_completed",
   ).length;
-  const totalRevenueVal = rawCustomers
-    .filter((c) => c.booking && c.booking.payment_status === "completed")
-    .reduce((sum, c) => sum + (c.booking?.amount || 0), 0);
+  const totalRevenueVal = rawCustomers.reduce((sum, c) => {
+    const completedBookingsAmount = (c.bookings || [])
+      .filter((b) => b.payment_status === "completed")
+      .reduce((s, b) => s + (b.amount || 0), 0);
+    return sum + completedBookingsAmount;
+  }, 0);
   const conversionRatePct = totalLeadsCount
     ? ((convertedLeadsCount / totalLeadsCount) * 100).toFixed(1) + "%"
     : "0.0%";
@@ -249,22 +252,39 @@ function Dashboard() {
       dataMap[key] = 0;
     }
     rawCustomers.forEach((c) => {
-      c.opportunities.forEach((o) => {
-        if (o.booking && o.booking.payment_status === "completed") {
-          const bDate = new Date(o.booking.booking_date);
-          const key = bDate.toLocaleString("default", { month: "short", year: "2-digit" });
-          if (key in dataMap) dataMap[key] += o.booking.amount;
-        }
+      (c.opportunities || []).forEach((o) => {
+        (o.bookings || []).forEach((b) => {
+          if (b.payment_status === "completed") {
+            const bDate = new Date(b.booking_date);
+            const key = bDate.toLocaleString("default", { month: "short", year: "2-digit" });
+            if (key in dataMap) dataMap[key] += Number(b.amount || 0);
+          }
+        });
       });
     });
-    return Object.entries(dataMap).map(([month, amount]) => ({
+
+    const rawAmounts = Object.values(dataMap);
+    const maxAmount = Math.max(0, ...rawAmounts);
+    const isCroreScale = maxAmount >= 10000000;
+    const divisor = isCroreScale ? 10000000 : 100000;
+    const unitLabel = isCroreScale ? "Cr" : "Lakhs";
+    const suffix = isCroreScale ? "Cr" : "L";
+
+    const formattedData = Object.entries(dataMap).map(([month, rawVal]) => ({
       month,
-      amount: amount / 100000,
+      amount: rawVal / divisor,
+      rawAmount: rawVal,
     }));
+
+    return {
+      data: formattedData,
+      unitLabel,
+      suffix,
+    };
   };
 
   const leadTrendData = getMonthlyLeadTrendData();
-  const revenueTrendData = getMonthlyRevenueTrendData();
+  const { data: revenueTrendData, unitLabel, suffix } = getMonthlyRevenueTrendData();
 
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [selectedReport, setSelectedReport] = useState<
@@ -1168,7 +1188,7 @@ function Dashboard() {
         <Card className="border-border/60 text-left">
           <CardHeader>
             <CardTitle className="text-sm font-semibold">
-              Monthly Revenue Trend (in Lakhs)
+              Monthly Revenue Trend (in {unitLabel})
             </CardTitle>
           </CardHeader>
           <CardContent className="h-64">
@@ -1183,7 +1203,12 @@ function Dashboard() {
                   stroke="rgba(200,200,200,0.15)"
                 />
                 <XAxis dataKey="month" tickLine={false} tickMargin={8} style={{ fontSize: 10 }} />
-                <YAxis tickLine={false} tickMargin={8} style={{ fontSize: 10 }} />
+                <YAxis
+                  tickLine={false}
+                  tickMargin={8}
+                  style={{ fontSize: 10 }}
+                  tickFormatter={(val) => `${val} ${suffix}`}
+                />
                 <Tooltip
                   contentStyle={{
                     background: "rgba(0,0,0,0.8)",
@@ -1192,7 +1217,7 @@ function Dashboard() {
                     color: "#fff",
                     fontSize: 11,
                   }}
-                  formatter={(value: any) => [`₹${value} L`, "Revenue"]}
+                  formatter={(value: any) => [`₹${Number(value).toFixed(2)} ${suffix}`, "Revenue"]}
                 />
                 <Bar dataKey="amount" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={45} />
               </BarChart>
