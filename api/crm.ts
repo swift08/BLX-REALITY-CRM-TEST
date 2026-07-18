@@ -1,28 +1,9 @@
+import "./shared/env-loader.js";
 import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { addLeadInternal } from "./shared/lead-service.js";
-
-// Load local .env file in dev mode without external dependencies
-try {
-  const envPath = path.resolve(process.cwd(), ".env");
-  if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, "utf-8");
-    for (const line of envContent.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#")) {
-        const [key, ...valParts] = trimmed.split("=");
-        const val = valParts.join("=");
-        if (key && val) {
-          process.env[key.trim()] = val.trim();
-        }
-      }
-    }
-  }
-} catch (e) {
-  console.error("Failed to load local .env file:", e);
-}
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;

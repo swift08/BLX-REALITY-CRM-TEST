@@ -4,6 +4,7 @@
 // Description: Core service for lead verification, deduplication, and DB insertion.
 // ============================================================
 
+import "./env-loader.js";
 import { createClient } from "@supabase/supabase-js";
 import process from "node:process";
 
