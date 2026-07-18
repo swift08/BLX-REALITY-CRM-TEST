@@ -75,13 +75,15 @@ export default async function handler(req: any, res: any) {
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    if (mode === "subscribe" && token === verifyToken) {
+    console.log("Webhook GET received:", JSON.stringify({ mode, tokenReceived: token, tokenExpected: verifyToken, challenge }));
+
+    if (mode === "subscribe" && token?.trim() === verifyToken?.trim()) {
       console.log("Meta Webhook handshake verified successfully.");
       res.setHeader("Content-Type", "text/plain");
       return res.status(200).send(challenge);
     }
 
-    console.warn("Meta Webhook handshake failed: Invalid verification token.");
+    console.warn(`Meta Webhook handshake FAILED. Received token: "${token}", Expected: "${verifyToken}"`);
     return res.status(403).send("Forbidden");
   }
 
