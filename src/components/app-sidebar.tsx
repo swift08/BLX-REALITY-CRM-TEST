@@ -85,19 +85,12 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       { to: "/followups", label: "Follow-ups", icon: BellRing },
       { to: "/sitevisits", label: "Site Visits", icon: MapPin },
       { to: "/projects", label: "Projects", icon: Briefcase },
-      { to: "/developers", label: "Developers", icon: Building2 },
       { to: "/inventory", label: "Inventory", icon: Boxes },
       { to: "/bookings", label: "Bookings", icon: KeyRound },
     ];
 
     // Analytics: all roles see analytics (Sales Exec gets personal-only view)
     items.push({ to: "/analytics", label: "Analytics", icon: TrendingUp });
-
-    if (can(role).viewAuditLogs()) {
-      items.push({ to: "/auditlogs", label: "Audit Logs", icon: History });
-    }
-
-    items.push({ to: "/settings", label: "Settings", icon: Settings });
 
     return items;
   };

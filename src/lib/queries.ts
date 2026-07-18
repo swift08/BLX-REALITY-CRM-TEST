@@ -298,6 +298,7 @@ export interface CRMUser {
   name: string;
   email: string;
   role: AppRole;
+  isDisabled?: boolean;
 }
 
 // ----------------------------------------------------
@@ -959,6 +960,10 @@ export async function deleteCRMUser(id: string) {
   return callApi("deleteCRMUser", { id });
 }
 
+export async function toggleCRMUserStatus(id: string, isDisabled: boolean) {
+  return callApi("toggleCRMUserStatus", { id, isDisabled });
+}
+
 export async function markNotificationRead(id: string) {
   return callApi("markNotificationRead", { id });
 }
@@ -981,4 +986,12 @@ export async function serverSignIn(payload: any) {
 
 export async function fixManagerRole(userId: string) {
   return callApi("fixManagerRole", { userId });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  return callApi("changePassword", { currentPassword, newPassword });
+}
+
+export async function updateUserProfile(name: string, phone: string) {
+  return callApi("updateUserProfile", { name, phone });
 }

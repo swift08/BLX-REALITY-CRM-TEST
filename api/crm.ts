@@ -252,6 +252,7 @@ export default async function handler(req: any, res: any) {
       "resetCRMUserPassword",
       "deleteCRMUser",
       "fixManagerRole",
+      "toggleCRMUserStatus",
     ]);
 
     const SUPER_ADMIN_ONLY_ACTIONS = new Set([
@@ -317,6 +318,9 @@ export default async function handler(req: any, res: any) {
             /* best-effort */
           }
           return res.status(400).json({ error: error.message });
+        }
+        if (data.user?.user_metadata?.is_disabled) {
+          return res.status(403).json({ error: "Your account is deactivated. Please contact an administrator." });
         }
         // Audit: login success
         try {
@@ -391,6 +395,50 @@ export default async function handler(req: any, res: any) {
         });
         if (error) return res.status(400).json({ error: error.message });
         return res.status(200).json(data);
+      }
+      case "changePassword": {
+        const { currentPassword, newPassword } = payload;
+        if (!currentPassword || !newPassword) {
+          return res.status(400).json({ error: "Missing password fields" });
+        }
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: actorEmail,
+          password: currentPassword,
+        });
+        if (signInErr) {
+          return res.status(400).json({ error: "Incorrect current password" });
+        }
+        const { error: updateErr } = await supabase.auth.admin.updateUserById(actorId, {
+          password: newPassword,
+        });
+        if (updateErr) {
+          return res.status(400).json({ error: updateErr.message });
+        }
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "CHANGE_PASSWORD",
+          old_value: "User initiated",
+          new_value: "Password updated successfully",
+        });
+        return res.status(200).json({ success: true });
+      }
+      case "updateUserProfile": {
+        const { name, phone } = payload;
+        const { data, error } = await supabase.auth.admin.updateUserById(actorId, {
+          user_metadata: {
+            ...((await supabase.auth.admin.getUserById(actorId)).data.user?.user_metadata || {}),
+            full_name: name,
+            phone: phone,
+          },
+        });
+        if (error) return res.status(400).json({ error: error.message });
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "UPDATE_PROFILE",
+          old_value: actorEmail,
+          new_value: `Name: ${name}, Phone: ${phone}`,
+        });
+        return res.status(200).json({ success: true, user: data.user });
       }
 
       // ----------------------------------------------------
@@ -531,8 +579,26 @@ export default async function handler(req: any, res: any) {
           name: u.user_metadata?.full_name || u.email?.split("@")[0] || "User",
           email: u.email || "",
           role: u.user_metadata?.role || "sales_executive",
+          isDisabled: !!u.user_metadata?.is_disabled,
         }));
         return res.status(200).json(users);
+      }
+      case "toggleCRMUserStatus": {
+        const { id, isDisabled } = payload;
+        const { data, error } = await supabase.auth.admin.updateUserById(id, {
+          user_metadata: {
+            ...((await supabase.auth.admin.getUserById(id)).data.user?.user_metadata || {}),
+            is_disabled: isDisabled,
+          },
+        });
+        if (error) return res.status(400).json({ error: error.message });
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: isDisabled ? "DEACTIVATE_USER" : "ACTIVATE_USER",
+          old_value: id,
+          new_value: isDisabled ? "Deactivated" : "Activated",
+        });
+        return res.status(200).json({ success: true });
       }
 
       // ----------------------------------------------------

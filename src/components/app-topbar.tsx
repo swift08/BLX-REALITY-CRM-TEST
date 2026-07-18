@@ -24,7 +24,24 @@ import {
   Moon,
   Eye,
   EyeOff,
+  User,
+  LogOut,
+  KeyRound,
+  Settings as SettingsIcon,
+  History as HistoryIcon,
+  Building2 as BuildingIcon,
+  Users as UsersIcon,
 } from "lucide-react";
+import { useNavigate, Link } from "@tanstack/react-router";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NewLeadDialog } from "./new-lead-dialog";
 import {
   useNotifications,
@@ -37,6 +54,7 @@ import {
   useBookings,
   useInventory,
   useCRMUsers,
+  changePassword,
 } from "@/lib/queries";
 import { Search as SearchIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,10 +79,59 @@ export function AppTopbar({
   subtitle?: string;
   onMenuToggle?: () => void;
 }) {
-  const { role, changeRole, user } = useAuth();
+  const { role, changeRole, user, signOut } = useAuth();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: notifications = [] } = useNotifications();
   const [showNotifs, setShowNotifs] = useState(false);
+
+  // Change Password Modal States
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match.");
+      return;
+    }
+    setPasswordBusy(true);
+    try {
+      if (isSupabaseConfigured) {
+        await changePassword(currentPassword, newPassword);
+      } else {
+        const validPasswords: Record<AppRole, string[]> = {
+          super_admin: ["Nischith@2026", "Madhu@2026"],
+          admin: ["Admin@2026"],
+          manager: ["Manager@2026"],
+          sales_executive: ["Dev@2026", "Vishal@2026", "Manoj@2026", "Tejasvijois@2026"],
+        };
+        const allowed = validPasswords[role || "super_admin"] || [];
+        if (allowed.length > 0 && !allowed.includes(currentPassword)) {
+          throw new Error("Incorrect current password.");
+        }
+      }
+      toast.success("Password changed successfully!");
+      setShowChangePassword(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to change password.");
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
 
   // Theme states
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -658,6 +725,75 @@ export function AppTopbar({
             </>
           )}
         </div>
+
+        {/* Profile Dropdown Menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="relative h-9 w-9 rounded-full shrink-0">
+              <Avatar className="h-9 w-9">
+                <AvatarImage src={user?.user_metadata?.avatar_url || ""} alt={user?.user_metadata?.full_name || "User"} />
+                <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs uppercase">
+                  {(user?.user_metadata?.full_name || user?.email || "U").substring(0, 2)}
+                </AvatarFallback>
+              </Avatar>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" align="end" forceMount>
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-semibold leading-none text-foreground">
+                  {user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User"}
+                </p>
+                <p className="text-xs leading-none text-muted-foreground truncate">
+                  {user?.email || "harshith@blxrealty.com"}
+                </p>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate({ to: "/profile" })} className="cursor-pointer">
+              <User className="mr-2 h-4 w-4" />
+              <span>My Profile</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowChangePassword(true)} className="cursor-pointer">
+              <KeyRound className="mr-2 h-4 w-4" />
+              <span>Change Password</span>
+            </DropdownMenuItem>
+            
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate({ to: "/settings" })} className="cursor-pointer">
+              <SettingsIcon className="mr-2 h-4 w-4" />
+              <span>Settings</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate({ to: "/developers" })} className="cursor-pointer">
+              <BuildingIcon className="mr-2 h-4 w-4" />
+              <span>Developers</span>
+            </DropdownMenuItem>
+            {role && (role === "super_admin" || role === "admin" || role === "manager") && (
+              <DropdownMenuItem onClick={() => navigate({ to: "/auditlogs" })} className="cursor-pointer">
+                <HistoryIcon className="mr-2 h-4 w-4" />
+                <span>Audit Logs</span>
+              </DropdownMenuItem>
+            )}
+            {role && (role === "super_admin" || role === "admin") && (
+              <DropdownMenuItem onClick={() => navigate({ to: "/users" })} className="cursor-pointer">
+                <UsersIcon className="mr-2 h-4 w-4" />
+                <span>Users Management</span>
+              </DropdownMenuItem>
+            )}
+            
+            <DropdownMenuSeparator />
+            <DropdownMenuItem 
+              onClick={async () => {
+                await signOut();
+                navigate({ to: "/auth" });
+              }} 
+              className="text-red-500 hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Logout</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       {/* Role Verification Dialog Modal */}
@@ -733,6 +869,105 @@ export function AppTopbar({
               </Button>
               <Button type="submit" size="sm" disabled={busy}>
                 {busy ? "Verifying..." : "Verify Access"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Password Dialog Modal */}
+      <Dialog open={showChangePassword} onOpenChange={setShowChangePassword}>
+        <DialogContent className="max-w-md bg-card text-left rounded-xl border border-border shadow-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold font-display text-foreground flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" /> Change Password
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              Please enter your current password and your new password. Passwords must be at least 6 characters.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleChangePasswordSubmit} className="space-y-4 mt-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="current-password">Current Password</Label>
+              <div className="relative">
+                <Input
+                  id="current-password"
+                  type={showCurrentPassword ? "text" : "password"}
+                  placeholder="Enter current password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                >
+                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password">New Password</Label>
+              <div className="relative">
+                <Input
+                  id="new-password"
+                  type={showNewPassword ? "text" : "password"}
+                  placeholder="Enter new password (min. 6 chars)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-password">Confirm New Password</Label>
+              <div className="relative">
+                <Input
+                  id="confirm-password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Confirm new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowChangePassword(false);
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
+                disabled={passwordBusy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={passwordBusy}>
+                {passwordBusy ? "Updating..." : "Update Password"}
               </Button>
             </DialogFooter>
           </form>

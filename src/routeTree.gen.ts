@@ -9,10 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UsersRouteImport } from './routes/users'
 import { Route as SitevisitsRouteImport } from './routes/sitevisits'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as InventoryRouteImport } from './routes/inventory'
@@ -25,6 +27,11 @@ import { Route as AuditlogsRouteImport } from './routes/auditlogs'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
 
+const UsersRoute = UsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitevisitsRoute = SitevisitsRouteImport.update({
   id: '/sitevisits',
   path: '/sitevisits',
@@ -43,6 +50,11 @@ const ReportsRoute = ReportsRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PaymentsRoute = PaymentsRouteImport.update({
@@ -113,10 +125,12 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof InventoryRoute
   '/leads': typeof LeadsRoute
   '/payments': typeof PaymentsRoute
+  '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
+  '/users': typeof UsersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -130,10 +144,12 @@ export interface FileRoutesByTo {
   '/inventory': typeof InventoryRoute
   '/leads': typeof LeadsRoute
   '/payments': typeof PaymentsRoute
+  '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
+  '/users': typeof UsersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -148,10 +164,12 @@ export interface FileRoutesById {
   '/inventory': typeof InventoryRoute
   '/leads': typeof LeadsRoute
   '/payments': typeof PaymentsRoute
+  '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
+  '/users': typeof UsersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -167,10 +185,12 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/leads'
     | '/payments'
+    | '/profile'
     | '/projects'
     | '/reports'
     | '/settings'
     | '/sitevisits'
+    | '/users'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -184,10 +204,12 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/leads'
     | '/payments'
+    | '/profile'
     | '/projects'
     | '/reports'
     | '/settings'
     | '/sitevisits'
+    | '/users'
   id:
     | '__root__'
     | '/'
@@ -201,10 +223,12 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/leads'
     | '/payments'
+    | '/profile'
     | '/projects'
     | '/reports'
     | '/settings'
     | '/sitevisits'
+    | '/users'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -219,14 +243,23 @@ export interface RootRouteChildren {
   InventoryRoute: typeof InventoryRoute
   LeadsRoute: typeof LeadsRoute
   PaymentsRoute: typeof PaymentsRoute
+  ProfileRoute: typeof ProfileRoute
   ProjectsRoute: typeof ProjectsRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   SitevisitsRoute: typeof SitevisitsRoute
+  UsersRoute: typeof UsersRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitevisits': {
       id: '/sitevisits'
       path: '/sitevisits'
@@ -253,6 +286,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/payments': {
@@ -347,10 +387,12 @@ const rootRouteChildren: RootRouteChildren = {
   InventoryRoute: InventoryRoute,
   LeadsRoute: LeadsRoute,
   PaymentsRoute: PaymentsRoute,
+  ProfileRoute: ProfileRoute,
   ProjectsRoute: ProjectsRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   SitevisitsRoute: SitevisitsRoute,
+  UsersRoute: UsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
