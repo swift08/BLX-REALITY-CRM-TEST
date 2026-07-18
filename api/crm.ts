@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { addLeadInternal } from "./shared/lead-service";
 
 // Load local .env file in dev mode without external dependencies
 try {
@@ -539,83 +540,11 @@ export default async function handler(req: any, res: any) {
       // ----------------------------------------------------
       case "addLead": {
         const { lead } = payload;
-        const digits = lead.phone.replace(/\D/g, "");
-
-        const { data: dupCheck } = await supabase
-          .from("customers")
-          .select("id, name")
-          .eq("phone", digits)
-          .eq("is_deleted", false)
-          .maybeSingle();
-
-        if (dupCheck) {
-          const { data: dbOpps } = await supabase
-            .from("opportunities")
-            .select("owner")
-            .eq("customer_id", dupCheck.id);
-          const oppOwner = dbOpps && dbOpps[0] ? dbOpps[0].owner : "Unassigned";
-          return res
-            .status(400)
-            .json({ error: `DUPLICATE_DETECTED:${dupCheck.id}:${dupCheck.name}:${oppOwner}` });
+        const result = await addLeadInternal(lead, actorName);
+        if (result.error) {
+          return res.status(result.statusCode || 400).json({ error: result.error });
         }
-
-        const { data: dbCustomer, error: cErr } = await supabase
-          .from("customers")
-          .insert({
-            name: lead.name,
-            phone: digits,
-            email: lead.email,
-            source: lead.source,
-            created_by: actorName,
-          })
-          .select()
-          .single();
-        if (cErr) return res.status(400).json({ error: cErr.message });
-
-        const { data: dbOpportunity, error: oErr } = await supabase
-          .from("opportunities")
-          .insert({
-            customer_id: dbCustomer.id,
-            project_id: lead.project_id === "none" || !lead.project_id ? null : lead.project_id,
-            budget: lead.budget || "₹1.5 Cr",
-            stage: lead.owner && lead.owner !== "Unassigned" ? "assigned" : "new",
-            temperature: lead.temperature || "warm",
-            owner: lead.owner || "Unassigned",
-          })
-          .select()
-          .single();
-        if (oErr) return res.status(400).json({ error: oErr.message });
-
-        await supabase
-          .from("customers")
-          .update({ activeOpportunityId: dbOpportunity.id })
-          .eq("id", dbCustomer.id);
-
-        await publishEvent(
-          "CUSTOMER_CREATED",
-          dbCustomer.id,
-          { source: dbCustomer.source },
-          actorName,
-        );
-        if (dbOpportunity.owner !== "Unassigned") {
-          await publishEvent(
-            "OPPORTUNITY_ASSIGNED",
-            dbCustomer.id,
-            { owner: dbOpportunity.owner, oldOwner: "Unassigned" },
-            actorName,
-          );
-        }
-
-        return res.status(200).json({
-          ...dbCustomer,
-          opportunities: [
-            {
-              ...dbOpportunity,
-              customerId: dbOpportunity.customer_id,
-              projectId: dbOpportunity.project_id,
-            },
-          ],
-        });
+        return res.status(200).json(result.data);
       }
       case "updateLead": {
         const { id, updates, stageChangeReason } = payload;

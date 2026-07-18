@@ -26,21 +26,47 @@ export default defineConfig({
       name: "api-middleware",
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
-          if (req.url?.startsWith("/api/crm")) {
+          const urlObj = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+          const pathname = urlObj.pathname;
+
+          if (pathname.startsWith("/api/crm") || pathname.startsWith("/api/meta/webhook")) {
             let body = "";
             req.on("data", (chunk) => {
               body += chunk;
             });
             req.on("end", async () => {
               try {
-                const parsedBody = body ? JSON.parse(body) : {};
-                const { default: handler } = await server.ssrLoadModule("./api/crm.ts");
+                let handlerPath = "";
+                let parsedBody = {};
+
+                if (pathname.startsWith("/api/crm")) {
+                  handlerPath = "./api/crm.ts";
+                  parsedBody = body ? JSON.parse(body) : {};
+                } else if (pathname === "/api/meta/webhook/status" || pathname === "/api/meta/webhook/status/") {
+                  handlerPath = "./api/meta/webhook/status.ts";
+                } else if (pathname === "/api/meta/webhook" || pathname === "/api/meta/webhook/") {
+                  handlerPath = "./api/meta/webhook.ts";
+                } else {
+                  next();
+                  return;
+                }
+
+                const { default: handler } = await server.ssrLoadModule(handlerPath);
+
+                const queryParams: Record<string, string> = {};
+                urlObj.searchParams.forEach((val, key) => {
+                  queryParams[key] = val;
+                });
 
                 const mockReq = {
                   method: req.method,
                   body: parsedBody,
                   headers: req.headers,
-                };
+                  query: queryParams,
+                  [Symbol.asyncIterator]: async function* () {
+                    yield Buffer.from(body);
+                  },
+                } as any;
 
                 let statusCode = 200;
                 const headers: Record<string, string> = {};
@@ -60,6 +86,10 @@ export default defineConfig({
                       "Content-Type": "application/json",
                     });
                     res.end(JSON.stringify(data));
+                  },
+                  send(data?: any) {
+                    res.writeHead(statusCode, headers);
+                    res.end(data);
                   },
                   end(data?: any) {
                     res.writeHead(statusCode, headers);
