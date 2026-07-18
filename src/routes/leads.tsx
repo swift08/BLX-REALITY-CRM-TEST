@@ -523,7 +523,9 @@ function CustomersPage() {
                       {[
                         "Website",
                         "Instagram",
+                        "Instagram Lead Ads",
                         "Facebook",
+                        "Facebook Lead Ads",
                         "WhatsApp",
                         "Walk-in",
                         "Referral",
