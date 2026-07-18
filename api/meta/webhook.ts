@@ -89,9 +89,17 @@ export default async function handler(req: any, res: any) {
 
   // 2. Incoming Event Ingestion (POST request)
   if (req.method === "POST") {
+    console.log("======================================");
+    console.log("===== META WEBHOOK HIT =====");
+    console.log("Method:", req.method);
+    console.log("Headers:", req.headers);
+    console.log("======================================");
+
     let rawBody = "";
     try {
       rawBody = await getRawBody(req);
+      console.log("Raw Body:");
+      console.log(rawBody);
     } catch (err: any) {
       return res.status(400).json({ error: "Failed to read request body" });
     }
