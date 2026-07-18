@@ -4,7 +4,7 @@
 // Description: Returns health status, sync statistics, and API checks.
 // ============================================================
 
-import { getSupabaseClient } from "../../shared/lead-service";
+import { getSupabaseClient } from "../../shared/lead-service.js";
 
 export default async function handler(req: any, res: any) {
   // Only allow GET requests

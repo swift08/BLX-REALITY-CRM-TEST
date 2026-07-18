@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { addLeadInternal } from "./shared/lead-service";
+import { addLeadInternal } from "./shared/lead-service.js";
 
 // Load local .env file in dev mode without external dependencies
 try {

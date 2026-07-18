@@ -5,8 +5,8 @@
 // ============================================================
 
 import crypto from "node:crypto";
-import { getSupabaseClient, addLeadInternal } from "../shared/lead-service";
-import { metaLeadFieldMapping } from "../../src/config/metaLeadFieldMapping";
+import { getSupabaseClient, addLeadInternal } from "../shared/lead-service.js";
+import { metaLeadFieldMapping } from "../../src/config/metaLeadFieldMapping.js";
 
 // Disable automatic body parsing so we can compute correct HMAC SHA-256 signatures
 export const config = {
