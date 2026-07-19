@@ -27,7 +27,13 @@ import {
   ShieldAlert,
   Eye,
   EyeOff,
+  Receipt,
+  DollarSign,
+  ShieldCheck,
+  PieChart,
+  Workflow,
 } from "lucide-react";
+
 import {
   Dialog,
   DialogContent,
@@ -44,9 +50,8 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
 
   // Query followups to check for overdue items
   const { data: followups = [] } = useFollowups();
-  const todayStr = new Date().toISOString().slice(0, 10);
   const overdueCount = followups.filter(
-    (f) => f.status === "pending" && f.time.slice(0, 10) < todayStr,
+    (f) => f.status === "overdue" || (f.status === "pending" && new Date(f.time) < new Date()),
   ).length;
 
   // Role switching validation states
@@ -67,6 +72,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
         admin: "admin@blxreality.com",
         sales_executive: "dev@blxreality.com",
         manager: "manager@blxreality.com",
+        marketing: "marketing@blxreality.com",
       };
       const filtered = crmUsers.filter((u) => u.role === proposedRole);
       if (filtered.length > 0) {
@@ -78,6 +84,11 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
   }, [proposedRole, crmUsers]);
 
   const getNavItems = () => {
+    // Marketing can ONLY see Projects
+    if (role === "marketing") {
+      return [{ to: "/projects", label: "Projects", icon: Briefcase }];
+    }
+
     const items = [
       { to: "/", label: "Dashboard", icon: Gauge },
       { to: "/leads", label: "Customers", icon: Users },
@@ -85,11 +96,20 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       { to: "/followups", label: "Follow-ups", icon: BellRing },
       { to: "/sitevisits", label: "Site Visits", icon: MapPin },
       { to: "/projects", label: "Projects", icon: Briefcase },
-      { to: "/inventory", label: "Inventory", icon: Boxes },
       { to: "/bookings", label: "Bookings", icon: KeyRound },
+      { to: "/payments", label: "Payments", icon: DollarSign },
+      { to: "/post-sales", label: "Post-Sales Ops", icon: ShieldCheck },
     ];
 
-    // Analytics: all roles see analytics (Sales Exec gets personal-only view)
+    if (can(role).viewInvoiceCMS()) {
+      items.push({ to: "/invoice-cms", label: "Invoice CMS", icon: Receipt });
+    }
+
+    if (role === "super_admin" || role === "admin") {
+      items.push({ to: "/lead-assignment-settings", label: "Lead Assignment", icon: Workflow });
+    }
+
+    items.push({ to: "/finance-dashboard", label: "Finance Analytics", icon: PieChart });
     items.push({ to: "/analytics", label: "Analytics", icon: TrendingUp });
 
     return items;
@@ -123,6 +143,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
           admin: "admin@blxreality.com",
           sales_executive: "dev@blxreality.com",
           manager: "manager@blxreality.com",
+          marketing: "marketing@blxreality.com",
         };
 
         // Log in to target account to switch session
@@ -143,6 +164,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
           admin: ["Admin@2026"],
           manager: ["Manager@2026"],
           sales_executive: ["Dev@2026", "Vishal@2026", "Manoj@2026", "Tejasvijois@2026"],
+          marketing: ["Marketing@2026"],
         };
 
         const allowed = validPasswords[proposedRole] || [];
@@ -181,7 +203,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
           </div>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-none">
           {navItems.map((item) => {
             const active = location.pathname === item.to;
             const Icon = item.icon;
@@ -233,6 +255,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
               <option value="admin">💼 Admin</option>
               <option value="manager">🛡️ Manager</option>
               <option value="sales_executive">📞 Sales Executive</option>
+              <option value="marketing">📢 Marketing</option>
             </select>
           </div>
 
@@ -294,7 +317,9 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
                           ? "admin@blxreality.com"
                           : proposedRole === "manager"
                             ? "manager@blxreality.com"
-                            : "dev@blxreality.com"
+                            : proposedRole === "marketing"
+                              ? "marketing@blxreality.com"
+                              : "dev@blxreality.com"
                       : ""}
                   </span>
                 </div>

@@ -629,7 +629,7 @@ function BusinessCalendar() {
 
                               {/* Main Title */}
                               <h4 className="text-xs font-bold leading-tight font-display drop-shadow-xs line-clamp-2">
-                                {ev.title}
+                                {ev.title} {ev.status === "completed" && "✔️"}
                               </h4>
                             </div>
 
@@ -724,7 +724,7 @@ function BusinessCalendar() {
                             }}
                             className={`text-[10px] p-1 rounded-lg font-semibold truncate border ${styleCfg.softBg}`}
                           >
-                            {styleCfg.emoji} {ev.title}
+                            {styleCfg.emoji} {ev.title} {ev.status === "completed" && "✔️"}
                           </div>
                         );
                       })}
@@ -797,7 +797,9 @@ function BusinessCalendar() {
                             • {fmtTime12(new Date(ev.start))} – {fmtTime12(new Date(ev.end))}
                           </span>
                         </div>
-                        <h3 className="text-base font-bold text-foreground">{ev.title}</h3>
+                        <h3 className="text-base font-bold text-foreground">
+                          {ev.title} {ev.status === "completed" && "✔️"}
+                        </h3>
                         {ev.details && (
                           <p className="text-xs text-muted-foreground leading-relaxed">
                             {ev.details}
@@ -867,7 +869,8 @@ function BusinessCalendar() {
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs font-bold uppercase tracking-wider">
-                                      {styleCfg.emoji} {ev.title}
+                                      {styleCfg.emoji} {ev.title}{" "}
+                                      {ev.status === "completed" && "✔️"}
                                     </span>
                                   </div>
                                   <div className="text-xs text-muted-foreground flex items-center gap-2">
@@ -1051,9 +1054,14 @@ function BusinessCalendar() {
           {viewEv && (
             <div className="space-y-4">
               <DialogHeader>
-                <DialogTitle className="text-lg font-bold font-display text-foreground flex items-center gap-2">
+                <DialogTitle className="text-lg font-bold font-display text-foreground flex items-center gap-2 flex-wrap">
                   <span>{EVENT_STYLES[viewEv.type as EvType]?.emoji || "📅"}</span>
                   <span>{viewEv.title}</span>
+                  {viewEv.status === "completed" && (
+                    <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-600 px-2 py-0.5 border border-emerald-500/20 rounded-full uppercase">
+                      Done
+                    </span>
+                  )}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
                   {EVENT_STYLES[viewEv.type as EvType]?.label || viewEv.type} • Scheduled Event
@@ -1107,6 +1115,30 @@ function BusinessCalendar() {
               <div className="flex items-center justify-between pt-3 border-t">
                 {canManage && (
                   <div className="flex items-center gap-2">
+                    {canManage &&
+                      (viewEv.type === "visit" || viewEv.type === "meeting") &&
+                      viewEv.status !== "completed" && (
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              await updateCalendarEvent(viewEv.id, {
+                                ...viewEv,
+                                status: "completed",
+                              });
+                              toast.success("Event marked as completed!");
+                              queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+                              setIsViewOpen(false);
+                            } catch (err: any) {
+                              toast.error(err.message || "Failed to update event");
+                            }
+                          }}
+                          className="text-xs h-8 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Mark Completed
+                        </Button>
+                      )}
+
                     <Button
                       size="sm"
                       variant="outline"

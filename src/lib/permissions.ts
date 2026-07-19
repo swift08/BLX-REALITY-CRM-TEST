@@ -13,6 +13,7 @@ export function can(role: AppRole | null) {
   const isAdmin = role === "admin";
   const isManager = role === "manager";
   const isSalesExec = role === "sales_executive";
+  const isMarketing = role === "marketing";
 
   // Shorthand groups
   const isAdminOrAbove = isSuperAdmin || isAdmin;
@@ -30,14 +31,14 @@ export function can(role: AppRole | null) {
     viewDashboardAuditWidget: () => isAdminOrAbove,
 
     // ─── CUSTOMERS / LEADS ───────────────────────────────────────
-    /** All roles can view their scoped leads */
-    viewLeads: () => true,
+    /** All roles can view their scoped leads (marketing cannot) */
+    viewLeads: () => !isMarketing,
     /** Only SA and Admin see ALL leads (Sales Exec filtered to own, Manager to team) */
     viewAllLeads: () => isAdminOrAbove,
     /** Manager and above can view all team leads */
     viewTeamLeads: () => isManagerOrAbove,
     /** Create a new customer record (Manager/Admin/SA, or Sales Exec self-assigned) */
-    createCustomer: () => true,
+    createCustomer: () => !isMarketing,
     /** Edit any customer details */
     editCustomer: () => isManagerOrAbove || isSalesExec,
     /** Soft-delete (archive) a customer (Super Admin and Admin only) */
@@ -56,23 +57,23 @@ export function can(role: AppRole | null) {
     /** Merge two duplicate customer records */
     mergeDuplicateCustomer: () => isAdminOrAbove,
     /** Export customer list (Manager: team, Admin/SA: company, Sales Exec: personal) */
-    exportCustomers: () => true,
+    exportCustomers: () => !isMarketing,
     /** Unmask sensitive client contact info (phone/email/budget) - triggers audit log for Sales Exec */
-    unmaskContactData: () => true,
+    unmaskContactData: () => !isMarketing,
 
     // ─── FOLLOW-UPS ──────────────────────────────────────────────
     /** Admin/Manager see all team follow-ups; Sales Exec sees own */
     viewAllFollowups: () => isManagerOrAbove,
-    /** Create follow-up (all roles can) */
-    createFollowup: () => true,
+    /** Create follow-up (all roles can, except marketing) */
+    createFollowup: () => !isMarketing,
     /** Complete a follow-up */
-    completeFollowup: () => true,
+    completeFollowup: () => !isMarketing,
     /** Reassign a follow-up to another person */
     reassignFollowup: () => isManagerOrAbove,
 
     // ─── CALENDAR ────────────────────────────────────────────────
     /** Create any event type */
-    createCalendarEvent: () => true,
+    createCalendarEvent: () => !isMarketing,
     /** Create/manage company holidays (admin-only) */
     manageCompanyHolidays: () => isAdminOrAbove,
     /** Edit or delete any event (not just own) */
@@ -115,8 +116,8 @@ export function can(role: AppRole | null) {
     deleteProject: () => false,
     /** Archive project record */
     archiveProject: () => isAdminOrAbove,
-    /** Upload floor plans / docs to project */
-    uploadProjectDocuments: () => isAdminOrAbove,
+    /** Upload floor plans / docs to project (marketing can also upload) */
+    uploadProjectDocuments: () => isAdminOrAbove || isMarketing,
 
     // ─── INVENTORY ───────────────────────────────────────────────
     /** View inventory (all roles) */
@@ -141,7 +142,7 @@ export function can(role: AppRole | null) {
 
     // ─── BOOKINGS ────────────────────────────────────────────────
     /** Initiate a booking request (all roles) */
-    initiateBooking: () => true,
+    initiateBooking: () => !isMarketing,
     /** Approve/confirm a booking request (Manager level review) */
     approveBookingRequest: () => isManagerOrAbove,
     /** Final verify/confirm booking (Admin/Super Admin level) */
@@ -173,7 +174,7 @@ export function can(role: AppRole | null) {
     /** View team analytics */
     viewTeamAnalytics: () => isManagerOrAbove,
     /** View personal analytics (all can, but Sales Exec sees only personal) */
-    viewPersonalAnalytics: () => true,
+    viewPersonalAnalytics: () => !isMarketing,
 
     // ─── REPORTS ─────────────────────────────────────────────────
     /** Export company-wide reports */
@@ -181,11 +182,11 @@ export function can(role: AppRole | null) {
     /** Export team reports */
     exportTeamReports: () => isManagerOrAbove,
     /** Export personal reports */
-    exportPersonalReports: () => true,
+    exportPersonalReports: () => !isMarketing,
 
     // ─── AUDIT LOGS ──────────────────────────────────────────────
     /** View the audit log page (SA/Admin: all, Manager: team, Sales Exec: own action history) */
-    viewAuditLogs: () => true,
+    viewAuditLogs: () => !isMarketing,
     /** Edit audit logs - IMMUTABLE AT DATA LAYER FOR ALL ROLES */
     editAuditLogs: () => false,
     /** Delete audit log entries - IMMUTABLE AT DATA LAYER FOR ALL ROLES */
@@ -235,6 +236,34 @@ export function can(role: AppRole | null) {
     /** Role simulation mode (view-as-lower-role) (Super Admin only) */
     simulateRole: () => isSuperAdmin,
 
+    // ─── INVOICE CMS & PERMISSIONS ───────────────────────────────
+    /** Access / view the Invoice CMS module */
+    viewInvoiceCMS: () => isSuperAdmin || isAdmin || isManager,
+    /** Edit business company details on invoices */
+    editInvoiceCompanyInfo: () => isSuperAdmin || isAdmin,
+    /** Update bank accounts and payment details */
+    updateInvoiceBankingDetails: () => isSuperAdmin,
+    /** Modify GST, TDS, PF, and statutory tax parameters */
+    modifyInvoiceTaxInfo: () => isSuperAdmin || isAdmin,
+    /** Edit payment notes, terms & conditions */
+    editInvoiceTerms: () => isSuperAdmin || isAdmin,
+    /** Change company logo, seal, branding colors & signatory */
+    changeInvoiceBranding: () => isSuperAdmin || isAdmin,
+    /** Select default invoice template */
+    manageInvoiceTemplates: () => isSuperAdmin || isAdmin,
+    /** Generate new tax invoices */
+    generateInvoices: () => !isMarketing,
+    /** Regenerate existing invoices with updated CMS rules */
+    regenerateInvoices: () => isSuperAdmin || isAdmin || isManager,
+    /** Approve invoices in Pending Approval state */
+    approveInvoices: () => isSuperAdmin || isAdmin || isManager,
+    /** Cancel issued invoices */
+    cancelInvoices: () => isSuperAdmin || isAdmin,
+    /** Record collections & payments against invoices */
+    recordPayments: () => !isMarketing,
+    /** Override / modify core contract details of locked bookings */
+    modifyLockedBookings: () => isSuperAdmin,
+
     // ─── HELPERS & SCOPES ────────────────────────────────────────
     /** Returns the human-readable role label */
     roleLabel: (): string => {
@@ -242,6 +271,7 @@ export function can(role: AppRole | null) {
       if (isAdmin) return "Admin (Operations)";
       if (isManager) return "Manager";
       if (isSalesExec) return "Sales Executive";
+      if (isMarketing) return "Marketing";
       return "Unknown";
     },
     /** Returns the role emoji */
@@ -250,12 +280,14 @@ export function can(role: AppRole | null) {
       if (isAdmin) return "🛠️";
       if (isManager) return "👨‍💼";
       if (isSalesExec) return "💼";
+      if (isMarketing) return "📢";
       return "❓";
     },
     /** Returns the scope label for dashboard context banners */
     dashboardScopeLabel: (): string => {
       if (isSuperAdmin || isAdmin) return "Company-Wide";
       if (isManager) return "Team Performance";
+      if (isMarketing) return "Marketing";
       return "My Performance";
     },
     /** Returns the enterprise title for the dashboard */
@@ -263,42 +295,49 @@ export function can(role: AppRole | null) {
       if (isSuperAdmin) return "Company Dashboard";
       if (isAdmin) return "Operations Dashboard";
       if (isManager) return "Team Dashboard";
+      if (isMarketing) return "Documents Portal";
       return "My Dashboard";
     },
   };
 }
 
-// Mock Team Members Mapping
-const TEAM_MEMBERS: Record<string, string[]> = {
-  "u-4": ["u-3", "u-4"], // Manager Priya (u-4) manages Sales Executive Arjun (u-3) and herself
-  "84365b54-a003-4ac0-ac5b-fdec93ed7f0a": [
-    "ea645e68-8109-45c9-9b77-313bc2297fe5", // Dev
-    "249de63c-b3d9-4408-9410-346df90d35c5", // Vishal
-    "a3a87233-6345-45a2-bee1-680babedd12b", // Manoj
-    "84365b54-a003-4ac0-ac5b-fdec93ed7f0a", // Manager itself
-  ],
-};
-
 /**
  * Resolves list of user IDs belonging to a manager's team.
+ *
+ * IMPORTANT: This function no longer uses a hardcoded map.
+ * Instead, pass a pre-fetched list of team member IDs from the server.
+ *
+ * How to fetch team members dynamically:
+ *   1. Call getCRMUsers action on the server.
+ *   2. Filter users where user_metadata.manager_id === currentUserId.
+ *   3. Pass the resulting id[] as the `knownTeamIds` argument.
+ *
+ * If no list is provided, falls back to manager seeing only their own records.
+ * This is safe — it never silently expands scope.
  */
-export function getTeamMembers(userId: string | null): string[] {
+export function getTeamMembers(userId: string | null, knownTeamIds: string[] = []): string[] {
   if (!userId) return [];
-  return TEAM_MEMBERS[userId] || [userId];
+  // Always include the manager's own ID in their scope
+  const ids = new Set([userId, ...knownTeamIds]);
+  return Array.from(ids);
 }
 
 /**
  * Resolves whether a given owner_id belongs to the current user's scoped visibility.
+ *
+ * @param teamMemberIds - Pre-fetched list of team member IDs for manager scoping.
+ *   Required for managers. If omitted, managers see only their own leads (safe default).
  */
 export function isLeadVisible(
   role: AppRole | null,
   currentUserId: string | null,
   ownerId: string | null,
+  teamMemberIds: string[] = [],
 ): boolean {
   if (!role || !currentUserId) return false;
   if (role === "super_admin" || role === "admin") return true;
   if (role === "manager") {
-    const team = getTeamMembers(currentUserId);
+    const team = getTeamMembers(currentUserId, teamMemberIds);
     return ownerId ? team.includes(ownerId) : false;
   }
   return ownerId === currentUserId;
@@ -321,4 +360,54 @@ export function canResetPasswordFor(
     );
   }
   return false;
+}
+
+/**
+ * Checks whether a customer stage is eligible for invoice generation.
+ * Invoices can ONLY be generated after reaching Booking Confirmed / Converted stage.
+ */
+export function isInvoiceEligibleStage(stage: string | null | undefined): boolean {
+  if (!stage) return false;
+  const eligibleStages = [
+    "booking_initiated",
+    "payment_pending",
+    "payment_completed",
+    "converted",
+    "closed",
+  ];
+  return eligibleStages.includes(stage.toLowerCase());
+}
+
+/**
+ * Validates whether a given user can generate an invoice for a specific customer.
+ * Enforces role access, customer ownership scoping, and stage eligibility.
+ */
+export function canGenerateInvoiceForCustomer(
+  role: AppRole | null,
+  currentUserId: string | null,
+  customerOwnerId: string | null,
+  customerStage: string | null | undefined,
+): { allowed: boolean; reason?: string } {
+  if (!can(role).generateInvoices()) {
+    return {
+      allowed: false,
+      reason: `Role (${role || "User"}) is not authorized to generate invoices.`,
+    };
+  }
+
+  if (!isLeadVisible(role, currentUserId, customerOwnerId)) {
+    return { allowed: false, reason: "Customer is assigned to another sales executive." };
+  }
+
+  if (!isInvoiceEligibleStage(customerStage)) {
+    const formattedStage = (customerStage || "Early Funnel Stage")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+    return {
+      allowed: false,
+      reason: `Customer is currently in '${formattedStage}' stage. Invoices require 'Booking Confirmed' or 'Converted' stage.`,
+    };
+  }
+
+  return { allowed: true };
 }

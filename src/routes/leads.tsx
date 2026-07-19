@@ -4,11 +4,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TempBadge, StageBadge } from "@/components/temp-badge";
+import { TempBadge, StageBadge, LeadProgressBar } from "@/components/temp-badge";
 import { NewLeadDialog } from "@/components/new-lead-dialog";
 import {
+  useLeadAssignmentHistory,
+  useReassignLeadWithEngine,
+  useLeadAssignmentSettings,
   useCustomers,
   useProjects,
   useInventory,
@@ -16,6 +20,11 @@ import {
   useAuditLogs,
   useCalendarEvents,
   useCRMUsers,
+  useInvoiceSettings,
+  useNegotiation,
+  useUpdateNegotiation,
+  useAddNegotiationRound,
+  useRespondManagerApproval,
   updateLead,
   softDeleteLead,
   addLeadNote,
@@ -32,14 +41,25 @@ import {
   addCustomerDocument,
   uploadProjectFile,
   addLeadCommunicationLog,
+  addLeadInteraction,
   bulkAssignLeads,
   Customer,
   Stage,
   Temp,
 } from "@/lib/queries";
-import { downloadPdfInvoice } from "@/lib/pdf-generator";
+import {
+  downloadPdfInvoice,
+  generatePaymentReceiptPdf,
+  downloadCustomerStatementPdf,
+  downloadRefundReceiptPdf,
+} from "@/lib/pdf-generator";
 import { useAuth, AppRole } from "@/hooks/use-auth";
-import { can, isLeadVisible } from "@/lib/permissions";
+import {
+  can,
+  isLeadVisible,
+  isInvoiceEligibleStage,
+  canGenerateInvoiceForCustomer,
+} from "@/lib/permissions";
 import { toast } from "sonner";
 import { MaskedField } from "@/components/data-masking";
 import {
@@ -52,6 +72,7 @@ import {
   MessageSquare,
   Calendar,
   FileText,
+  Download,
   Tag,
   User,
   Users,
@@ -78,8 +99,18 @@ import {
   FileSignature,
   Compass,
   UserCheck,
+  UserPlus,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+
 import {
   Select,
   SelectContent,
@@ -90,7 +121,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const stageLabels: Record<Stage, string> = {
-  new: "New",
+  new: "New Lead",
   assigned: "Assigned",
   contact_attempted: "Contact Attempted",
   connected: "Connected",
@@ -100,7 +131,7 @@ const stageLabels: Record<Stage, string> = {
   site_visit_scheduled: "Site Visit Scheduled",
   site_visit_completed: "Site Visit Completed",
   negotiation: "Negotiation",
-  booking_initiated: "Booking Initiated",
+  booking_initiated: "Booking In Progress",
   payment_pending: "Payment Pending",
   payment_completed: "Payment Completed",
   converted: "Converted",
@@ -521,15 +552,16 @@ function CustomersPage() {
                     <SelectContent>
                       <SelectItem value="all">All Sources</SelectItem>
                       {[
-                        "Website",
-                        "Instagram",
-                        "Instagram Lead Ads",
-                        "Facebook",
-                        "Facebook Lead Ads",
-                        "WhatsApp",
-                        "Walk-in",
-                        "Referral",
-                        "Landing Page",
+                        "Website Forms",
+                        "Landing Pages",
+                        "Facebook Leads",
+                        "Instagram Leads",
+                        "Meta Lead Ads",
+                        "WhatsApp Leads",
+                        "Manual Entry",
+                        "Walk-in Customers",
+                        "Referral Leads",
+                        "Direct Phone Calls",
                       ].map((s) => (
                         <SelectItem key={s} value={s}>
                           {s}
@@ -887,7 +919,37 @@ function Customer360Workspace({
   const { data: auditLogs = [] } = useAuditLogs();
   const { data: calendarEvents = [] } = useCalendarEvents();
   const { data: crmUsers = [] } = useCRMUsers();
+  const { data: assignmentHistory = [] } = useLeadAssignmentHistory(customer.id);
+  const reassignLeadMutation = useReassignLeadWithEngine();
+
   const [activeTab, setActiveTab] = useState("overview");
+
+  // Reassignment Modal State
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignOwner, setReassignOwner] = useState(customer.owner || "Unassigned");
+  const [reassignReason, setReassignReason] = useState("");
+  const [reassignBusy, setReassignBusy] = useState(false);
+
+  const handleReassignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reassignOwner) return;
+    setReassignBusy(true);
+    try {
+      await reassignLeadMutation.mutateAsync({
+        leadId: customer.id,
+        newOwner: reassignOwner,
+        reason: reassignReason || "Reassigned by manager",
+      });
+      toast.success(`Lead successfully reassigned to ${reassignOwner}`);
+      setShowReassignModal(false);
+      setReassignReason("");
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to reassign lead");
+    } finally {
+      setReassignBusy(false);
+    }
+  };
 
   // Overview edit fields
   const [editName, setEditName] = useState(customer.name);
@@ -915,10 +977,13 @@ function Customer360Workspace({
     }
   };
 
+  const { data: invoiceSettings } = useInvoiceSettings();
+
   // Active Opportunity Editing state
+  const oppList = Array.isArray(customer.opportunities) ? customer.opportunities : [];
   const activeOpp =
-    customer.opportunities.find((o) => o.id === customer.activeOpportunityId) ||
-    customer.opportunities[0];
+    oppList.find((o) => o?.id === customer.activeOpportunityId) || oppList[0] || null;
+
   const initialBudget = parseBudget(activeOpp?.budget);
   const [editBudgetNum, setEditBudgetNum] = useState(initialBudget.num);
   const [editBudgetUnit, setEditBudgetUnit] = useState(initialBudget.unit);
@@ -926,6 +991,159 @@ function Customer360Workspace({
   const [editStage, setEditStage] = useState<Stage>(activeOpp?.stage || "new");
   const [editOwner, setEditOwner] = useState(activeOpp?.owner || "Unassigned");
   const [editProj, setEditProj] = useState(activeOpp?.projectId || "none");
+
+  // ── Negotiation states, hooks & handlers ───────────────────
+  const { data: negData } = useNegotiation(activeOpp?.id || undefined);
+  const updateNegMutation = useUpdateNegotiation();
+  const addNegRoundMutation = useAddNegotiationRound();
+  const respondApprovalMutation = useRespondManagerApproval();
+
+  const [negOrigPrice, setNegOrigPrice] = useState<number>(0);
+  const [negCustBudget, setNegCustBudget] = useState<number>(0);
+  const [negCurrentOffer, setNegCurrentOffer] = useState<number>(0);
+  const [negExpectedClosing, setNegExpectedClosing] = useState<number>(0);
+  const [negMinApproved, setNegMinApproved] = useState<number>(0);
+  const [negStatus, setNegStatus] = useState<string>("started");
+  const [negOutcome, setNegOutcome] = useState<string>("");
+  const [negNotes, setNegNotes] = useState<string>("");
+  const [negDiscounts, setNegDiscounts] = useState<string[]>([]);
+
+  // Timeline round inputs
+  const [roundAction, setRoundAction] = useState<string>("Initial quotation");
+  const [roundOffer, setRoundOffer] = useState<string>("");
+  const [roundResponse, setRoundResponse] = useState<string>("");
+  const [roundNotes, setRoundNotes] = useState<string>("");
+  const [isCustomAction, setIsCustomAction] = useState<boolean>(false);
+  const [customActionText, setCustomActionText] = useState<string>("");
+
+  // Sync state with negData
+  useEffect(() => {
+    if (negData?.details) {
+      setNegOrigPrice(Number(negData.details.original_price) || 0);
+      setNegCustBudget(Number(negData.details.current_offer) || 0);
+      setNegCurrentOffer(Number(negData.details.current_offer) || 0);
+      setNegExpectedClosing(Number(negData.details.expected_closing) || 0);
+      setNegMinApproved(Number(negData.details.min_approved) || 0);
+      setNegStatus(negData.details.status || "started");
+      setNegOutcome(negData.details.outcome || "");
+      setNegNotes(negData.details.notes || "");
+      setNegDiscounts(Array.isArray(negData.details.discounts) ? negData.details.discounts : []);
+    }
+  }, [negData]);
+
+  // Auto-switch to negotiation tab if stage changes to negotiation
+  useEffect(() => {
+    if (customer.stage === "negotiation") {
+      setActiveTab("negotiation");
+    }
+  }, [customer.id, customer.stage]);
+
+  const formatINR = (n: number) => {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(n);
+  };
+
+  const handleSaveNegotiation = async (customUpdates?: any) => {
+    if (!activeOpp) return;
+    try {
+      const updates = customUpdates || {
+        original_price: Number(negOrigPrice),
+        current_offer: Number(negCurrentOffer),
+        expected_closing: Number(negExpectedClosing),
+        min_approved: Number(negMinApproved),
+        status: negStatus,
+        outcome: negOutcome || null,
+        notes: negNotes,
+        discounts: negDiscounts,
+      };
+
+      const res = await updateNegMutation.mutateAsync({
+        opportunityId: activeOpp.id,
+        updates,
+      });
+
+      if (res.approvalRequested) {
+        toast.warning("Offer is below approved minimum price. Sent request for Manager approval.");
+      } else {
+        toast.success("Negotiation parameters updated!");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update negotiation");
+    }
+  };
+
+  const handleToggleDiscount = (perk: string) => {
+    const next = negDiscounts.includes(perk)
+      ? negDiscounts.filter((d) => d !== perk)
+      : [...negDiscounts, perk];
+    setNegDiscounts(next);
+
+    handleSaveNegotiation({
+      original_price: Number(negOrigPrice),
+      current_offer: Number(negCurrentOffer),
+      expected_closing: Number(negExpectedClosing),
+      min_approved: Number(negMinApproved),
+      status: negStatus,
+      outcome: negOutcome || null,
+      notes: negNotes,
+      discounts: next,
+    });
+  };
+
+  const handleAddRound = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOpp) return;
+    try {
+      const actionText = isCustomAction ? customActionText : roundAction;
+      if (!actionText.trim()) {
+        toast.error("Please specify action taken");
+        return;
+      }
+
+      await addNegRoundMutation.mutateAsync({
+        opportunityId: activeOpp.id,
+        round: {
+          action_taken: actionText,
+          offer_amount: Number(roundOffer) || Number(negCurrentOffer) || 0,
+          customer_response: roundResponse,
+          notes: roundNotes,
+        },
+      });
+
+      toast.success("Timeline round logged successfully!");
+      setRoundOffer("");
+      setRoundResponse("");
+      setRoundNotes("");
+      if (isCustomAction) {
+        setCustomActionText("");
+        setIsCustomAction(false);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add timeline round");
+    }
+  };
+
+  const handleManagerDecision = async (
+    decision: "approve" | "reject" | "counter",
+    suggested?: number,
+    mgrNotes?: string,
+  ) => {
+    if (!activeOpp) return;
+    try {
+      await respondApprovalMutation.mutateAsync({
+        opportunityId: activeOpp.id,
+        decision,
+        suggestedAmount: suggested,
+        notes: mgrNotes,
+      });
+      toast.success(`Discount request successfully processed: ${decision.toUpperCase()}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit manager decision");
+    }
+  };
 
   // Note states
   const [noteContent, setNoteContent] = useState("");
@@ -939,22 +1157,17 @@ function Customer360Workspace({
   const [newTemp, setNewTemp] = useState<Temp>("warm");
   const [newOwner, setNewOwner] = useState("Unassigned");
 
-  // Activity fields state
-  const [actType, setActType] = useState<"call" | "meeting" | "visit" | "whatsapp">("call");
-  const [callOutcome, setCallOutcome] = useState("Answered");
-  const [discussSummary, setDiscussSummary] = useState("");
-  const [nextAction, setNextAction] = useState("");
-  const [custFeedback, setCustFeedback] = useState("");
-  const [internalRemarks, setInternalRemarks] = useState("");
-  const [fupTitle, setFupTitle] = useState("");
-  const [fupTime, setFupTime] = useState("");
-  const [fupPriority, setFupPriority] = useState<"high" | "medium" | "low">("medium");
-
-  // Communication fields state
-  const [commType, setCommType] = useState<"call" | "whatsapp" | "email" | "sms">("whatsapp");
-  const [commDirection, setCommDirection] = useState<"inbound" | "outbound">("outbound");
-  const [commSummary, setCommSummary] = useState("");
-  const [commDetails, setCommDetails] = useState("");
+  // Interactions fields state
+  const [intType, setIntType] = useState<string>("call");
+  const [intDirection, setIntDirection] = useState<"inbound" | "outbound">("outbound");
+  const [intCallOutcome, setIntCallOutcome] = useState<string>("Answered");
+  const [intSummary, setIntSummary] = useState<string>("");
+  const [intDetails, setIntDetails] = useState<string>("");
+  const [intScheduleFollowup, setIntScheduleFollowup] = useState<boolean>(false);
+  const [intFupTitle, setIntFupTitle] = useState<string>("");
+  const [intFupTime, setIntFupTime] = useState<string>("");
+  const [intFupPriority, setIntFupPriority] = useState<"high" | "medium" | "low">("medium");
+  const [intFilter, setIntFilter] = useState<string>("all");
 
   // Document states
   const [docCategory, setDocCategory] = useState("KYC Document");
@@ -1112,59 +1325,55 @@ function Customer360Workspace({
     }
   };
 
-  const handleAddActivity = async (e: React.FormEvent) => {
+  const handleAddInteraction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!discussSummary.trim() || !nextAction.trim()) {
-      toast.error("Please add Discussion Summary and Next Action details.");
+    if (!intSummary.trim()) {
+      toast.error("Please provide a summary or topic for the interaction.");
       return;
     }
-    if (!fupTime) {
-      toast.error("Business Rule: An interaction log requires a mandatory scheduled follow-up.");
+
+    if (intType === "note" && !intDetails.trim()) {
+      toast.error("Please enter the content for the internal note.");
       return;
     }
-    const combinedSummary = `[Summary] ${discussSummary} | [Next Action] ${nextAction}${custFeedback.trim() ? ` | [Feedback] ${custFeedback}` : ""}${internalRemarks.trim() ? ` | [Remarks] ${internalRemarks}` : ""}`;
+
+    if (intScheduleFollowup) {
+      if (!intFupTitle.trim()) {
+        toast.error("Please specify a title for the next follow-up action.");
+        return;
+      }
+      if (!intFupTime) {
+        toast.error("Please select a scheduled date and time for the follow-up.");
+        return;
+      }
+    }
+
     try {
-      await addLeadActivity(
-        customer.id,
-        actType,
-        combinedSummary,
-        fupTitle || `Follow-up callback: ${nextAction.slice(0, 30)}`,
-        fupTime,
-        fupPriority,
-        actType === "call" ? callOutcome : undefined,
-      );
-      toast.success("Activity logged and follow-up scheduled!");
-      setDiscussSummary("");
-      setNextAction("");
-      setCustFeedback("");
-      setInternalRemarks("");
-      setFupTitle("");
-      setFupTime("");
+      await addLeadInteraction(customer.id, {
+        type: intType,
+        direction: ["call", "whatsapp", "email", "sms", "general", "other"].includes(intType)
+          ? intDirection
+          : "outbound",
+        summary: intSummary.trim(),
+        details: intDetails.trim() || undefined,
+        next_followup: intScheduleFollowup ? intFupTime : null,
+        followup_title: intScheduleFollowup ? intFupTitle.trim() : null,
+        followup_priority: intScheduleFollowup ? intFupPriority : "medium",
+        outcome: intType === "call" ? intCallOutcome : undefined,
+      });
+
+      toast.success("Interaction logged successfully!");
+      setIntSummary("");
+      setIntDetails("");
+      setIntScheduleFollowup(false);
+      setIntFupTitle("");
+      setIntFupTime("");
+
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["followups"] });
       qc.invalidateQueries({ queryKey: ["calendar-events"] });
     } catch (err: any) {
-      toast.error(err.message);
-    }
-  };
-
-  const handleLogComm = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!commSummary.trim()) return;
-    try {
-      await addLeadCommunicationLog(
-        customer.id,
-        commType,
-        commDirection,
-        commSummary,
-        commDetails || undefined,
-      );
-      toast.success("Communication logged!");
-      setCommSummary("");
-      setCommDetails("");
-      qc.invalidateQueries({ queryKey: ["leads"] });
-    } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || "Failed to log interaction");
     }
   };
 
@@ -1428,31 +1637,6 @@ function Customer360Workspace({
       <div className="flex-1 grid grid-cols-12 overflow-hidden bg-muted/5">
         {/* Left Sidebar Info panel */}
         <div className="col-span-12 lg:col-span-3 border-r bg-card p-4 space-y-5 overflow-y-auto text-left">
-          {/* Customer Scores */}
-          <div className="space-y-3">
-            <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-display">
-              Dynamic Analytics
-            </h3>
-            <div className="p-3.5 border border-border/80 rounded-xl bg-muted/20 space-y-3 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground font-semibold">
-                  Priority Rank Score
-                </span>
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    (customer.priority_score ?? 50) > 70
-                      ? "bg-red-500/10 text-red-500 border border-red-500/20"
-                      : (customer.priority_score ?? 50) > 40
-                        ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
-                        : "bg-blue-500/10 text-blue-500 border border-blue-500/20"
-                  }`}
-                >
-                  {customer.priority_score ?? 50}/100
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* Quick Stats */}
           <div className="space-y-2.5">
             <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-display">
@@ -1481,6 +1665,11 @@ function Customer360Workspace({
                   {new Date(customer.created_at).toLocaleDateString()}
                 </span>
               </div>
+            </div>
+
+            {/* Visual Sales Stage Progress Indicator (Module 2.6) */}
+            <div className="pt-2 pb-1 border-t border-border/50">
+              <LeadProgressBar stage={customer.stage || "new"} />
             </div>
           </div>
 
@@ -1576,35 +1765,35 @@ function Customer360Workspace({
                   Timeline
                 </TabsTrigger>
                 <TabsTrigger
-                  value="activities"
+                  value="assignment"
                   className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent"
                 >
-                  Activities
+                  Assignment History
                 </TabsTrigger>
                 <TabsTrigger
-                  value="communication"
+                  value="interactions"
                   className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent"
                 >
-                  Communication
+                  Interactions
                 </TabsTrigger>
-                <TabsTrigger
-                  value="followups"
-                  className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent"
-                >
-                  Followups
-                </TabsTrigger>
-                <TabsTrigger
-                  value="meetings"
-                  className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent"
-                >
-                  Meetings
-                </TabsTrigger>
+
                 <TabsTrigger
                   value="visits"
                   className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent"
                 >
                   Visits
                 </TabsTrigger>
+                {(customer.stage === "negotiation" || negData?.details) && (
+                  <TabsTrigger
+                    value="negotiation"
+                    className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent flex items-center gap-1.5"
+                  >
+                    🤝 Negotiation
+                    {negData?.details?.status === "waiting_approval" && (
+                      <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                    )}
+                  </TabsTrigger>
+                )}
                 <TabsTrigger
                   value="bookings"
                   className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent"
@@ -2071,36 +2260,281 @@ function Customer360Workspace({
                 </div>
               </TabsContent>
 
-              {/* TAB 4: ACTIVITIES (INTERACTION LOGGER) */}
-              <TabsContent value="activities" className="m-0 space-y-6">
-                <form
-                  onSubmit={handleAddActivity}
-                  className="space-y-4 max-w-xl p-4 border rounded-xl bg-card"
-                >
-                  <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
-                    Log Interaction Outcome
-                  </h3>
+              {/* TAB: ASSIGNMENT HISTORY (ENTERPRISE AUDIT TRAIL) */}
+              <TabsContent value="assignment" className="m-0 space-y-4">
+                <div className="p-4 border rounded-xl bg-card space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+                    <div>
+                      <h3 className="font-bold text-xs text-foreground uppercase tracking-wider flex items-center gap-2">
+                        <UserCheck className="h-4 w-4 text-primary" /> Lead Ownership & Assignment
+                        Engine Audit Trail
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Centralized Lead Assignment Engine history and timeline of all distribution
+                        events.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="text-xs font-bold border-primary/30 text-primary"
+                      >
+                        Current Owner: {customer.owner || "Unassigned"}
+                      </Badge>
+                      {can(role).reassignLead() && (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => setShowReassignModal(true)}
+                          className="h-8 text-xs gap-1.5 shadow-sm"
+                        >
+                          <UserPlus className="h-3.5 w-3.5" /> Reassign Lead
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
-                  <div className="grid grid-cols-3 gap-4">
+                  {/* Audit Trail History Table */}
+                  <div className="overflow-x-auto pt-1">
+                    <table className="w-full text-xs text-left">
+                      <thead>
+                        <tr className="border-b bg-muted/20 text-muted-foreground font-semibold uppercase text-[10px]">
+                          <th className="px-3 py-2.5">Date & Time</th>
+                          <th className="px-3 py-2.5">Previous Owner</th>
+                          <th className="px-3 py-2.5">Assigned Owner</th>
+                          <th className="px-3 py-2.5">Distribution Strategy</th>
+                          <th className="px-3 py-2.5">Reason & Trigger</th>
+                          <th className="px-3 py-2.5">Assigned By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {assignmentHistory.length > 0
+                          ? assignmentHistory.map((item) => (
+                              <tr
+                                key={item.id}
+                                className="border-b last:border-0 hover:bg-muted/10 transition-colors"
+                              >
+                                <td className="px-3 py-2.5 font-mono text-[11px] whitespace-nowrap">
+                                  {new Date(item.created_at).toLocaleString("en-IN", {
+                                    dateStyle: "medium",
+                                    timeStyle: "short",
+                                  })}
+                                </td>
+                                <td className="px-3 py-2.5 text-muted-foreground">
+                                  {item.previous_owner || "Unassigned"}
+                                </td>
+                                <td className="px-3 py-2.5 font-bold text-primary">
+                                  {item.assigned_owner || "Unassigned"}
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-primary/5 text-primary border-primary/20 capitalize">
+                                    {(item.strategy_used || "round_robin").replace("_", " ")}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2.5 text-foreground/90 font-medium">
+                                  {item.reason || "Automatic Lead Engine distribution"}
+                                </td>
+                                <td className="px-3 py-2.5 text-muted-foreground">
+                                  {item.assigned_by || "System"}
+                                </td>
+                              </tr>
+                            ))
+                          : (customer.timeline || [])
+                              .filter(
+                                (evt) =>
+                                  evt.title.toLowerCase().includes("assign") ||
+                                  evt.title.toLowerCase().includes("owner") ||
+                                  evt.title.toLowerCase().includes("created"),
+                              )
+                              .map((evt, i) => (
+                                <tr key={i} className="border-b last:border-0 hover:bg-muted/10">
+                                  <td className="px-3 py-2.5 font-mono text-[11px]">
+                                    {new Date(evt.time).toLocaleString("en-IN", {
+                                      dateStyle: "medium",
+                                      timeStyle: "short",
+                                    })}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-muted-foreground">
+                                    {i === 0 ? "Initial Ingestion" : "Previous Owner"}
+                                  </td>
+                                  <td className="px-3 py-2.5 font-semibold text-primary">
+                                    {customer.owner || "Unassigned"}
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-primary/5 text-primary border-primary/20">
+                                      Round Robin
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-muted-foreground">{evt.title}</td>
+                                  <td className="px-3 py-2.5 text-muted-foreground">System</td>
+                                </tr>
+                              ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Manager Reassign Lead Dialog */}
+                <Dialog open={showReassignModal} onOpenChange={setShowReassignModal}>
+                  <DialogContent className="max-w-md bg-card text-left rounded-xl border border-border shadow-2xl p-6 space-y-4">
+                    <DialogHeader>
+                      <DialogTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                        <UserPlus className="h-5 w-5 text-primary" /> Reassign Lead Ownership
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-muted-foreground">
+                        Manually reassign {customer.name} to another Sales Executive. Every
+                        reassignment is logged in the Lead Assignment Audit Trail.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <form onSubmit={handleReassignSubmit} className="space-y-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-foreground">
+                          New Sales Executive
+                        </Label>
+                        <Select value={reassignOwner} onValueChange={setReassignOwner}>
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue placeholder="Select executive" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Unassigned">Unassigned</SelectItem>
+                            {crmUsers.map((u) => (
+                              <SelectItem key={u.id} value={u.name}>
+                                {u.name} ({(u.role || "sales_executive").replace("_", " ")}){" "}
+                                {u.assignment_status === "paused" ? "⏸ Paused" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-foreground">
+                          Reassignment Reason
+                        </Label>
+                        <Input
+                          placeholder="e.g., Executive on leave, workload rebalancing, client request..."
+                          value={reassignReason}
+                          onChange={(e) => setReassignReason(e.target.value)}
+                          className="text-xs"
+                          required
+                        />
+                      </div>
+
+                      <DialogFooter className="gap-2 pt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowReassignModal(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button type="submit" size="sm" disabled={reassignBusy}>
+                          {reassignBusy ? "Reassigning..." : "Confirm Reassignment"}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </TabsContent>
+
+              {/* TAB 4: INTERACTIONS */}
+              <TabsContent value="interactions" className="m-0 space-y-6">
+                <form
+                  onSubmit={handleAddInteraction}
+                  className="space-y-4 max-w-2xl p-5 border rounded-xl bg-card shadow-sm"
+                >
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <h3 className="font-bold text-xs text-foreground uppercase tracking-wider">
+                      Log New Customer Interaction
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1.5">
-                      <Label>Type</Label>
-                      <Select value={actType} onValueChange={(v: any) => setActType(v)}>
+                      <Label>Interaction Type *</Label>
+                      <Select
+                        value={intType}
+                        onValueChange={(val) => {
+                          setIntType(val);
+                          setIntSummary("");
+                          setIntDetails("");
+
+                          if (val === "call") {
+                            setIntCallOutcome("Answered");
+                            setIntDirection("outbound");
+                          } else if (val === "whatsapp" || val === "sms" || val === "email") {
+                            setIntDirection("outbound");
+                          } else if (val === "note") {
+                            setIntDirection("outbound");
+                          }
+                        }}
+                      >
                         <SelectTrigger className="h-9">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="call">📞 Call Outcome</SelectItem>
-                          <SelectItem value="meeting">🤝 Meeting Held</SelectItem>
-                          <SelectItem value="visit">📍 Site Visit completed</SelectItem>
-                          <SelectItem value="whatsapp">💬 WhatsApp Message sent</SelectItem>
+                          <SelectItem value="call">📞 Phone Call</SelectItem>
+                          <SelectItem value="whatsapp">💬 WhatsApp Message</SelectItem>
+                          <SelectItem value="email">✉️ Email</SelectItem>
+                          <SelectItem value="sms">📱 SMS</SelectItem>
+                          <SelectItem value="meeting">🤝 Meeting</SelectItem>
+                          <SelectItem value="note">📝 Internal Note</SelectItem>
+                          <SelectItem value="general">🗣️ General Conversation</SelectItem>
+                          <SelectItem value="document">📄 Document Shared</SelectItem>
+                          <SelectItem value="price_quote">💰 Price Quote Shared</SelectItem>
+                          <SelectItem value="other">⚙️ Other</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
 
-                    {actType === "call" && (
+                    {["call", "whatsapp", "email", "sms", "general", "other"].includes(intType) && (
+                      <div className="space-y-1.5">
+                        <Label>Direction</Label>
+                        <Select
+                          value={intDirection}
+                          onValueChange={(val: any) => setIntDirection(val)}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="outbound">Outbound (Sent)</SelectItem>
+                            <SelectItem value="inbound">Inbound (Received)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {intType === "call" && (
                       <div className="space-y-1.5">
                         <Label>Call Outcome *</Label>
-                        <Select value={callOutcome} onValueChange={setCallOutcome}>
+                        <Select
+                          value={intCallOutcome}
+                          onValueChange={(val) => {
+                            setIntCallOutcome(val);
+                            if (val === "No Answer" || val === "Busy" || val === "Switched Off") {
+                              const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                              const year = tomorrow.getFullYear();
+                              const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+                              const day = String(tomorrow.getDate()).padStart(2, "0");
+                              const hours = String(tomorrow.getHours()).padStart(2, "0");
+                              const minutes = String(tomorrow.getMinutes()).padStart(2, "0");
+                              setIntFupTime(`${year}-${month}-${day}T${hours}:${minutes}`);
+                              setIntFupTitle(`Automatic Follow-up: Call was ${val}`);
+                              setIntScheduleFollowup(true);
+                              if (!intSummary.trim()) {
+                                setIntSummary(`Call outcome: ${val}`);
+                              }
+                              if (!intDetails.trim()) {
+                                setIntDetails(
+                                  "Follow up call after 24 hours due to unanswered/busy status.",
+                                );
+                              }
+                            }
+                          }}
+                        >
                           <SelectTrigger className="h-9">
                             <SelectValue />
                           </SelectTrigger>
@@ -2116,235 +2550,243 @@ function Customer360Workspace({
                         </Select>
                       </div>
                     )}
-
-                    <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                      <Label>Follow-up priority</Label>
-                      <Select value={fupPriority} onValueChange={(v: any) => setFupPriority(v)}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="high">🚨 High Priority</SelectItem>
-                          <SelectItem value="medium">⚡ Medium Priority</SelectItem>
-                          <SelectItem value="low">❄️ Low Priority</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5 text-xs font-semibold">
-                      <Label>Discussion Summary *</Label>
-                      <textarea
-                        value={discussSummary}
-                        onChange={(e) => setDiscussSummary(e.target.value)}
-                        className="w-full h-20 p-3 rounded-lg border text-xs focus:ring-1 focus:ring-primary outline-none"
-                        placeholder="Details discussed..."
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1.5 text-xs font-semibold">
-                      <Label>Next Action *</Label>
-                      <textarea
-                        value={nextAction}
-                        onChange={(e) => setNextAction(e.target.value)}
-                        className="w-full h-20 p-3 rounded-lg border text-xs focus:ring-1 focus:ring-primary outline-none"
-                        placeholder="Next steps..."
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5 text-xs font-semibold">
-                      <Label>Customer Feedback</Label>
-                      <textarea
-                        value={custFeedback}
-                        onChange={(e) => setCustFeedback(e.target.value)}
-                        className="w-full h-20 p-3 rounded-lg border text-xs focus:ring-1 focus:ring-primary outline-none"
-                        placeholder="Customer response..."
-                      />
-                    </div>
-                    <div className="space-y-1.5 text-xs font-semibold">
-                      <Label>Internal Remarks</Label>
-                      <textarea
-                        value={internalRemarks}
-                        onChange={(e) => setInternalRemarks(e.target.value)}
-                        className="w-full h-20 p-3 rounded-lg border text-xs focus:ring-1 focus:ring-primary outline-none"
-                        placeholder="Internal notes..."
-                      />
-                    </div>
-                  </div>
-
-                  <div className="border-t border-dashed my-4 pt-4 space-y-3">
-                    <h4 className="font-semibold text-[11px] text-primary flex items-center gap-1 uppercase tracking-wider">
-                      <Clock className="h-3.5 w-3.5" /> Next Scheduled Follow-up (Mandatory Rule)
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="fup-title-input">Follow-up Title</Label>
-                        <Input
-                          id="fup-title-input"
-                          name="fup-title"
-                          placeholder="e.g. Discuss 3BHK Quote details"
-                          value={fupTitle}
-                          onChange={(e) => setFupTitle(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="fup-time-input">Scheduled Date & Time *</Label>
-                        <input
-                          id="fup-time-input"
-                          name="fup-time"
-                          type="datetime-local"
-                          required
-                          value={fupTime}
-                          onChange={(e) => setFupTime(e.target.value)}
-                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button type="submit" size="sm" className="w-full sm:w-auto">
-                    Log Interaction & Queue Follow-up
-                  </Button>
-                </form>
-
-                <div className="space-y-3 max-w-xl">
-                  <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
-                    Historical Logs
-                  </h3>
-                  {customer.activities.map((a) => (
-                    <div
-                      key={a.id}
-                      className="p-3 border border-border/50 rounded-lg bg-card text-xs flex flex-row items-start gap-3"
-                    >
-                      <div className="p-2 rounded bg-muted">
-                        {a.type === "call" && "📞"}
-                        {a.type === "meeting" && "🤝"}
-                        {a.type === "visit" && "📍"}
-                        {a.type === "whatsapp" && "💬"}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold uppercase tracking-wider text-[10px] text-muted-foreground">
-                            {a.type} interaction
-                          </span>
-                          <span className="text-[10px] text-muted-foreground font-mono">
-                            {new Date(a.time).toLocaleString()}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-foreground font-medium leading-normal">
-                          {a.summary}
-                        </p>
-                        {a.next_followup && (
-                          <div className="mt-2 text-[10px] font-semibold text-primary flex items-center gap-1 bg-primary/5 px-2 py-0.5 w-max rounded">
-                            Next Callback: {new Date(a.next_followup).toLocaleString()}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </TabsContent>
-
-              {/* TAB 5: COMMUNICATION */}
-              <TabsContent value="communication" className="m-0 space-y-6">
-                <form
-                  onSubmit={handleLogComm}
-                  className="space-y-4 max-w-xl p-4 border rounded-xl bg-card"
-                >
-                  <h4 className="font-bold text-xs uppercase tracking-wider text-foreground">
-                    Log Customer Communication Record
-                  </h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <Label>Channel</Label>
-                      <Select value={commType} onValueChange={(v: any) => setCommType(v)}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="whatsapp">💬 WhatsApp</SelectItem>
-                          <SelectItem value="call">📞 Call</SelectItem>
-                          <SelectItem value="email">✉️ Email</SelectItem>
-                          <SelectItem value="sms">📱 SMS</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Direction</Label>
-                      <Select value={commDirection} onValueChange={(v: any) => setCommDirection(v)}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="outbound">Outbound (Sent)</SelectItem>
-                          <SelectItem value="inbound">Inbound (Received)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Summary/Subject</Label>
+                      <Label>
+                        {intType === "email"
+                          ? "Email Subject *"
+                          : intType === "meeting"
+                            ? "Meeting Topic/Title *"
+                            : intType === "note"
+                              ? "Note Title *"
+                              : intType === "document"
+                                ? "Document Name *"
+                                : intType === "price_quote"
+                                  ? "Price Quote Title *"
+                                  : "Brief Summary / Subject *"}
+                      </Label>
                       <Input
-                        value={commSummary}
-                        onChange={(e) => setCommSummary(e.target.value)}
-                        placeholder="e.g. Price quote shared"
+                        required
+                        value={intSummary}
+                        onChange={(e) => setIntSummary(e.target.value)}
+                        placeholder={
+                          intType === "email"
+                            ? "e.g. Follow-up regarding customized pricing proposal"
+                            : intType === "meeting"
+                              ? "e.g. Site Visit Discussion & Customization Requests"
+                              : intType === "note"
+                                ? "e.g. Credit score check details"
+                                : intType === "document"
+                                  ? "e.g. PAN Card & KYC submission verification"
+                                  : intType === "price_quote"
+                                    ? "e.g. Standard 3 BHK Unit 502 price slab details"
+                                    : "e.g. Customer requested price sheets and floor plans"
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>
+                        {intType === "whatsapp" || intType === "sms"
+                          ? "Message Content / Transcript"
+                          : intType === "email"
+                            ? "Email Body / Details"
+                            : intType === "meeting"
+                              ? "Meeting Notes & Decisions"
+                              : intType === "note"
+                                ? "Note Body *"
+                                : intType === "document"
+                                  ? "Verification Details & Remarks"
+                                  : "Discussion Details / Notes"}
+                      </Label>
+                      <textarea
+                        value={intDetails}
+                        onChange={(e) => setIntDetails(e.target.value)}
+                        className="w-full h-24 p-3 rounded-lg border text-xs focus:ring-1 focus:ring-primary outline-none"
+                        placeholder={
+                          intType === "whatsapp" || intType === "sms"
+                            ? "Copy message details or chat transcript here..."
+                            : intType === "email"
+                              ? "Paste email body or long-form email conversation here..."
+                              : intType === "meeting"
+                                ? "Log the key details, objections raised, and agreements reached during the meeting..."
+                                : intType === "note"
+                                  ? "Log internal lead intelligence details..."
+                                  : "Provide additional context or interaction notes here..."
+                        }
+                        required={intType === "note"}
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label>Message Content / Transcripts</Label>
-                    <textarea
-                      value={commDetails}
-                      onChange={(e) => setCommDetails(e.target.value)}
-                      className="w-full h-16 p-3 rounded-lg border text-xs focus:ring-1"
-                      placeholder="Copy WhatsApp chat transcript or email body..."
-                    />
+                  <div className="border-t border-dashed pt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-semibold text-xs text-primary uppercase tracking-wider">
+                        <Clock className="h-3.5 w-3.5" /> Next Scheduled Follow-up
+                      </div>
+                      <label className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground cursor-pointer hover:text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={intScheduleFollowup}
+                          onChange={(e) => setIntScheduleFollowup(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded accent-primary"
+                        />
+                        Schedule what happens next
+                      </label>
+                    </div>
+
+                    {intScheduleFollowup && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-3.5 rounded-xl border border-primary/10 bg-primary/5 animate-in fade-in slide-in-from-top-1">
+                        <div className="space-y-1.5">
+                          <Label>Follow-up Action Title *</Label>
+                          <Input
+                            required
+                            placeholder="e.g. Call to finalize token advance"
+                            value={intFupTitle}
+                            onChange={(e) => setIntFupTitle(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Scheduled Date & Time *</Label>
+                          <input
+                            type="datetime-local"
+                            required
+                            value={intFupTime}
+                            onChange={(e) => setIntFupTime(e.target.value)}
+                            className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Follow-up Priority</Label>
+                          <Select
+                            value={intFupPriority}
+                            onValueChange={(val: any) => setIntFupPriority(val)}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="high">🚨 High Priority</SelectItem>
+                              <SelectItem value="medium">⚡ Medium Priority</SelectItem>
+                              <SelectItem value="low">❄️ Low Priority</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <Button type="submit" size="sm">
-                    Log Communication
+                  <Button type="submit" size="sm" className="w-full sm:w-auto font-bold">
+                    Log Interaction & Save
                   </Button>
                 </form>
 
-                <div className="space-y-3 max-w-xl">
-                  <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
-                    Communication Logs
-                  </h3>
-                  {customer.communications.map((log) => (
-                    <div
-                      key={log.id}
-                      className="p-3 border border-border/60 rounded-xl bg-card text-xs"
-                    >
-                      <div className="flex justify-between items-center">
-                        <span
-                          className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                            log.direction === "inbound"
-                              ? "bg-cyan-500/10 text-cyan-500"
-                              : "bg-indigo-500/10 text-indigo-500"
+                <div className="space-y-4 max-w-2xl">
+                  <div className="flex items-center justify-between border-b pb-2 flex-wrap gap-2">
+                    <h3 className="font-bold text-xs text-foreground uppercase tracking-wider">
+                      Engagement Timeline
+                    </h3>
+                    <div className="flex gap-1 flex-wrap">
+                      {[
+                        { label: "All", value: "all" },
+                        { label: "Calls", value: "call" },
+                        { label: "WhatsApp", value: "whatsapp" },
+                        { label: "Email", value: "email" },
+                        { label: "SMS", value: "sms" },
+                        { label: "Meetings", value: "meeting" },
+                        { label: "Notes", value: "note" },
+                      ].map((btn) => (
+                        <button
+                          key={btn.value}
+                          type="button"
+                          onClick={() => setIntFilter(btn.value)}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded-lg border transition-all ${
+                            intFilter === btn.value
+                              ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                              : "bg-card text-muted-foreground hover:bg-muted/50"
                           }`}
                         >
-                          {log.direction} {log.type}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {new Date(log.time).toLocaleString()}
-                        </span>
-                      </div>
-                      <h5 className="font-bold text-foreground mt-2">{log.summary}</h5>
-                      {log.details && (
-                        <p className="text-[11px] text-muted-foreground leading-normal mt-1 italic border-l-2 pl-2">
-                          {log.details}
-                        </p>
-                      )}
+                          {btn.label}
+                        </button>
+                      ))}
                     </div>
-                  ))}
-                  {customer.communications.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      No communication records logged.
-                    </p>
-                  )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {(customer.interactions || [])
+                      .filter((i: any) => intFilter === "all" || i.type === intFilter)
+                      .map((log: any) => (
+                        <div
+                          key={log.id}
+                          className="p-4 border border-border/50 rounded-2xl bg-card shadow-sm text-xs flex flex-row items-start gap-3.5 hover:border-primary/20 transition-all duration-200"
+                        >
+                          <div className="p-2.5 rounded-xl bg-muted/60 text-base shrink-0">
+                            {log.type === "call" && "📞"}
+                            {log.type === "whatsapp" && "💬"}
+                            {log.type === "email" && "✉️"}
+                            {log.type === "sms" && "📱"}
+                            {log.type === "meeting" && "🤝"}
+                            {log.type === "note" && "📝"}
+                            {log.type === "general" && "🗣️"}
+                            {log.type === "document" && "📄"}
+                            {log.type === "price_quote" && "💰"}
+                            {log.type === "other" && "⚙️"}
+                          </div>
+
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex justify-between items-center flex-wrap gap-1">
+                              <span className="flex items-center gap-1.5">
+                                <span
+                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                    log.direction === "inbound"
+                                      ? "bg-cyan-500/10 text-cyan-500"
+                                      : "bg-indigo-500/10 text-indigo-500"
+                                  }`}
+                                >
+                                  {log.direction || "outbound"} {log.type}
+                                </span>
+                                {log.created_by && (
+                                  <span className="text-[10px] font-semibold text-muted-foreground">
+                                    by {log.created_by}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                {new Date(log.time).toLocaleString()}
+                              </span>
+                            </div>
+
+                            <div>
+                              <h5 className="font-bold text-foreground text-xs leading-snug">
+                                {log.summary}
+                              </h5>
+                              {log.details && (
+                                <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 italic border-l-2 border-primary/20 pl-2.5 whitespace-pre-line">
+                                  {log.details}
+                                </p>
+                              )}
+                            </div>
+
+                            {log.next_followup && (
+                              <div className="text-[10px] font-bold text-primary flex items-center gap-1 bg-primary/5 px-2.5 py-1 w-max rounded-lg">
+                                📅 Next Callback: {new Date(log.next_followup).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                    {/* Empty state */}
+                    {(customer.interactions || []).filter(
+                      (i: any) => intFilter === "all" || i.type === intFilter,
+                    ).length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-6 italic">
+                        No interactions logged matching the active filter.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </TabsContent>
 
@@ -2357,45 +2799,51 @@ function Customer360Workspace({
                   <div className="space-y-2">
                     {followups
                       .filter((f: any) => f.lead_id === customer.id)
-                      .map((f: any) => (
-                        <div
-                          key={f.id}
-                          className="p-3 border rounded-xl bg-card text-xs flex items-center justify-between gap-3 border-border/80 shadow-sm"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-foreground">{f.title}</span>
-                              {f.status === "completed" && (
-                                <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded uppercase">
-                                  Completed
-                                </span>
-                              )}
-                              {f.status === "overdue" && (
-                                <span className="text-[9px] font-bold bg-red-500/10 text-red-500 px-1.5 py-0.5 rounded uppercase">
-                                  Overdue
-                                </span>
-                              )}
+                      .map((f: any) => {
+                        const isOverdue =
+                          f.status === "overdue" ||
+                          (f.status === "pending" && new Date(f.time) < new Date());
+                        const isPending = f.status === "pending" && !isOverdue;
+                        return (
+                          <div
+                            key={f.id}
+                            className="p-3 border rounded-xl bg-card text-xs flex items-center justify-between gap-3 border-border/80 shadow-sm"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-foreground">{f.title}</span>
+                                {f.status === "completed" && (
+                                  <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded uppercase">
+                                    Completed
+                                  </span>
+                                )}
+                                {isOverdue && (
+                                  <span className="text-[9px] font-bold bg-red-500/10 text-red-500 px-1.5 py-0.5 rounded uppercase">
+                                    Overdue
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-1">
+                                Due: {new Date(f.time).toLocaleString()} · Owner: {f.assigned_sales}
+                              </div>
                             </div>
-                            <div className="text-[10px] text-muted-foreground mt-1">
-                              Due: {new Date(f.time).toLocaleString()} · Owner: {f.assigned_sales}
-                            </div>
+                            {(isPending || isOverdue) && (
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  await completeFollowup(f.id);
+                                  qc.invalidateQueries({ queryKey: ["leads"] });
+                                  qc.invalidateQueries({ queryKey: ["followups"] });
+                                  toast.success("Task completed!");
+                                }}
+                                className="h-7 text-[10px]"
+                              >
+                                Mark Done
+                              </Button>
+                            )}
                           </div>
-                          {f.status === "pending" && (
-                            <Button
-                              size="sm"
-                              onClick={async () => {
-                                await completeFollowup(f.id);
-                                qc.invalidateQueries({ queryKey: ["leads"] });
-                                qc.invalidateQueries({ queryKey: ["followups"] });
-                                toast.success("Task completed!");
-                              }}
-                              className="h-7 text-[10px]"
-                            >
-                              Mark Done
-                            </Button>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     {followups.filter((f: any) => f.lead_id === customer.id).length === 0 && (
                       <p className="text-xs text-muted-foreground">No followups scheduled.</p>
                     )}
@@ -2479,6 +2927,22 @@ function Customer360Workspace({
 
               {/* TAB 9: BOOKINGS */}
               <TabsContent value="bookings" className="m-0 space-y-4">
+                {!isInvoiceEligibleStage(customer.stage) && (
+                  <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs flex items-center gap-2 max-w-xl">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                    <div className="leading-tight">
+                      <span className="font-bold text-foreground">
+                        Invoice Generation Unavailable
+                      </span>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Customer is currently in '{(customer.stage || "early").replace(/_/g, " ")}'
+                        stage. Official invoices require reaching 'Booking Confirmed' or 'Converted'
+                        stage.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {!activeOpp?.bookings || activeOpp.bookings.length === 0 ? (
                   <div className="max-w-xl p-4 border rounded-xl bg-card space-y-4">
                     <h3 className="font-bold text-xs uppercase tracking-wider text-primary flex items-center gap-1">
@@ -2556,38 +3020,133 @@ function Customer360Workspace({
                       const resolvedUnitNumber =
                         allUnits.find((u) => u.id === booking.unit_id)?.unit_number ||
                         booking.unit_id;
+
+                      const isFullyPaid = booking.payment_status === "completed";
+                      const amountPaid = isFullyPaid ? booking.amount || 0 : 0;
+                      const balanceDue = isFullyPaid ? 0 : booking.amount || 0;
+
                       return (
                         <div
                           key={booking.id}
-                          className="max-w-xl p-4 border border-amber-500/20 bg-amber-500/[0.01] rounded-xl space-y-3 shadow-xs"
+                          className="max-w-xl p-4 border border-primary/20 bg-card rounded-xl space-y-3 shadow-xs"
                         >
-                          <h4 className="font-bold text-xs text-amber-500 uppercase tracking-wider flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                            Unit Hold Booking Active: #BK-
-                            {booking.id
-                              .replace(/[^a-zA-Z0-9]/g, "")
-                              .slice(-6)
-                              .toUpperCase()}
-                          </h4>
-                          <div className="text-xs grid grid-cols-2 gap-y-1.5 max-w-xs text-left">
+                          <div className="flex items-center justify-between border-b pb-2">
+                            <h4 className="font-bold text-xs text-primary uppercase tracking-wider flex items-center gap-2">
+                              <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                              Parent Financial Record: #BK-
+                              {booking.id
+                                .replace(/[^a-zA-Z0-9]/g, "")
+                                .slice(-6)
+                                .toUpperCase()}
+                            </h4>
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-primary/5 text-primary border-primary/20"
+                            >
+                              1 Booking = 1 Financial History
+                            </Badge>
+                          </div>
+
+                          <div className="text-xs grid grid-cols-2 gap-y-1.5 max-w-sm text-left">
                             <span className="font-medium text-muted-foreground">
                               Allocated Unit:
                             </span>
                             <span className="font-bold font-mono text-foreground">
                               {resolvedUnitNumber}
                             </span>
+
                             <span className="font-medium text-muted-foreground">
-                              Holding Amount:
+                              Contract Billed:
                             </span>
                             <span className="font-bold text-foreground">
-                              ₹{booking.amount.toLocaleString("en-IN")}
+                              ₹{(booking.amount || 0).toLocaleString("en-IN")}
                             </span>
-                            <span className="font-medium text-muted-foreground">Hold Status:</span>
-                            <span className="font-bold text-amber-600 capitalize">
-                              {booking.payment_status}
+
+                            <span className="font-medium text-muted-foreground">
+                              Total Collections:
+                            </span>
+                            <span className="font-bold text-emerald-600">
+                              ₹{amountPaid.toLocaleString("en-IN")}
+                            </span>
+
+                            <span className="font-medium text-muted-foreground">
+                              Outstanding Balance:
+                            </span>
+                            <span className="font-bold text-amber-600">
+                              ₹{balanceDue.toLocaleString("en-IN")}
                             </span>
                           </div>
-                          <div className="flex gap-2 pt-2">
+
+                          <div className="flex gap-2 pt-2 flex-wrap">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1 text-xs font-bold text-primary hover:bg-primary/10 border-primary/30"
+                              onClick={() => {
+                                const validation = canGenerateInvoiceForCustomer(
+                                  role,
+                                  user?.id || "",
+                                  customer.owner || null,
+                                  customer.stage,
+                                );
+
+                                if (!validation.allowed) {
+                                  toast.error(
+                                    validation.reason ||
+                                      "Invoice generation restricted for this customer.",
+                                  );
+                                  return;
+                                }
+
+                                downloadPdfInvoice(
+                                  {
+                                    bookingId: booking.id,
+                                    leadId: customer.id,
+                                    customerName: customer.name,
+                                    customerPhone: customer.phone,
+                                    customerEmail: customer.email || undefined,
+                                    projectName:
+                                      projects.find((p) => p.id === activeOpp?.projectId)?.name ||
+                                      "BLX Premier Residence",
+                                    unitNumber: resolvedUnitNumber,
+                                    amount: booking.amount || 0,
+                                    paymentStatus: booking.payment_status,
+                                  },
+                                  invoiceSettings,
+                                );
+                              }}
+                            >
+                              <Download className="h-3.5 w-3.5" /> Tax Invoice PDF
+                            </Button>
+
+                            {isFullyPaid && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1 text-xs font-bold text-emerald-600 hover:bg-emerald-50 border-emerald-500/30"
+                                onClick={() => {
+                                  generatePaymentReceiptPdf(
+                                    {
+                                      receiptNumber: `RCPT-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+                                      invoiceNumber: `INV-2026-${booking.id.slice(-4).toUpperCase()}/BLX`,
+                                      customerName: customer.name,
+                                      projectName:
+                                        projects.find((p) => p.id === activeOpp?.projectId)?.name ||
+                                        "BLX Premier Residence",
+                                      unitNumber: resolvedUnitNumber,
+                                      amountPaid: booking.amount || 0,
+                                      paymentMethod: "Bank Transfer",
+                                      reference: `TXN-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+                                      date: new Date().toISOString(),
+                                    },
+                                    invoiceSettings,
+                                  );
+                                }}
+                              >
+                                <Check className="h-3.5 w-3.5" /> Payment Receipt PDF
+                              </Button>
+                            )}
+
                             {booking.payment_status === "pending" && (
                               <Button
                                 size="sm"
@@ -2693,9 +3252,52 @@ function Customer360Workspace({
               {/* TAB 10: INVOICES */}
               <TabsContent value="invoices" className="m-0 space-y-4">
                 <div className="space-y-3 max-w-xl text-left">
-                  <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
-                    Billing Statements & Invoices
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider">
+                      Billing Statements & Invoices
+                    </h3>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs font-bold text-primary border-primary/30"
+                      onClick={() => {
+                        const totalBilled = (activeOpp?.bookings || []).reduce(
+                          (sum: number, b: any) => sum + (b.amount || 0),
+                          0,
+                        );
+                        const totalCollected = (activeOpp?.bookings || []).reduce(
+                          (sum: number, b: any) => {
+                            return sum + (b.payment_status === "completed" ? b.amount || 0 : 0);
+                          },
+                          0,
+                        );
+                        const outstandingBalance = Math.max(0, totalBilled - totalCollected);
+
+                        const items = (activeOpp?.bookings || []).map((b: any) => ({
+                          date: b.booking_date || new Date().toISOString(),
+                          reference: `#BK-${b.id.slice(-6).toUpperCase()}`,
+                          description: `Unit ${allUnits.find((u) => u.id === b.unit_id)?.unit_number || "Allocation"} Holding`,
+                          debit: b.amount,
+                          credit: b.payment_status === "completed" ? b.amount : 0,
+                        }));
+
+                        downloadCustomerStatementPdf(
+                          {
+                            customerName: customer.name,
+                            customerPhone: customer.phone,
+                            customerEmail: customer.email,
+                            totalBilled,
+                            totalCollected,
+                            outstandingBalance,
+                            items,
+                          },
+                          invoiceSettings,
+                        );
+                      }}
+                    >
+                      <FileText className="h-3.5 w-3.5" /> Download Statement PDF
+                    </Button>
+                  </div>
                   {activeOpp?.bookings
                     ?.flatMap((b: any) =>
                       (b.invoices || []).map((inv: any) => ({ ...inv, unit_id: b.unit_id })),
@@ -2976,6 +3578,597 @@ function Customer360Workspace({
                           ))}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* TAB 14: NEGOTIATION WORKSPACE */}
+              <TabsContent value="negotiation" className="m-0 space-y-5">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+                  {/* Left Column: Commercial parameters & controls */}
+                  <div className="xl:col-span-8 space-y-5">
+                    {/* 1. Commercial Summary Panel */}
+                    <div className="p-5 border rounded-xl bg-card text-left space-y-4">
+                      <div className="flex justify-between items-center pb-2 border-b border-border/40">
+                        <div>
+                          <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                            <Handshake className="h-4 w-4 text-primary" /> Commercial Summary
+                          </h3>
+                          <p className="text-[10px] text-muted-foreground">
+                            Live commercial figures tracking negotiation gap and limits.
+                          </p>
+                        </div>
+                        {negStatus === "waiting_approval" && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20 animate-pulse">
+                            ⚠️ Waiting for Manager Approval
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground whitespace-nowrap block truncate">
+                            Original Price
+                          </Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-semibold">
+                              ₹
+                            </span>
+                            <Input
+                              type="number"
+                              disabled={customer.stage !== "negotiation"}
+                              className="pl-7 h-9 text-xs font-semibold"
+                              value={negOrigPrice || ""}
+                              onChange={(e) => setNegOrigPrice(Number(e.target.value))}
+                              onBlur={() => handleSaveNegotiation()}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground whitespace-nowrap block truncate">
+                            Customer Budget
+                          </Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-semibold">
+                              ₹
+                            </span>
+                            <Input
+                              type="number"
+                              disabled={customer.stage !== "negotiation"}
+                              className="pl-7 h-9 text-xs font-semibold"
+                              value={negCustBudget || ""}
+                              onChange={(e) => setNegCustBudget(Number(e.target.value))}
+                              onBlur={() => handleSaveNegotiation()}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground whitespace-nowrap block truncate">
+                            Current Offer
+                          </Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-semibold">
+                              ₹
+                            </span>
+                            <Input
+                              type="number"
+                              disabled={customer.stage !== "negotiation"}
+                              className="pl-7 h-9 text-xs font-bold text-primary"
+                              value={negCurrentOffer || ""}
+                              onChange={(e) => setNegCurrentOffer(Number(e.target.value))}
+                              onBlur={() => handleSaveNegotiation()}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground whitespace-nowrap block truncate">
+                            Expected Closing
+                          </Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-semibold">
+                              ₹
+                            </span>
+                            <Input
+                              type="number"
+                              disabled={customer.stage !== "negotiation"}
+                              className="pl-7 h-9 text-xs font-semibold"
+                              value={negExpectedClosing || ""}
+                              onChange={(e) => setNegExpectedClosing(Number(e.target.value))}
+                              onBlur={() => handleSaveNegotiation()}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground flex items-center gap-1 whitespace-nowrap">
+                            Min Approved Price
+                            {role !== "sales_executive" ? (
+                              <span className="text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 px-1 rounded shrink-0">
+                                MGR
+                              </span>
+                            ) : null}
+                          </Label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-xs text-muted-foreground font-semibold">
+                              ₹
+                            </span>
+                            <Input
+                              type="number"
+                              disabled={
+                                role === "sales_executive" || customer.stage !== "negotiation"
+                              }
+                              className="pl-7 h-9 text-xs font-semibold bg-muted/30"
+                              value={negMinApproved || ""}
+                              onChange={(e) => setNegMinApproved(Number(e.target.value))}
+                              onBlur={() => handleSaveNegotiation()}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground whitespace-nowrap block truncate">
+                            Negotiation Status
+                          </Label>
+                          <Select
+                            disabled={customer.stage !== "negotiation"}
+                            value={negStatus}
+                            onValueChange={(val) => {
+                              setNegStatus(val);
+                              handleSaveNegotiation({
+                                original_price: Number(negOrigPrice),
+                                current_offer: Number(negCurrentOffer),
+                                expected_closing: Number(negExpectedClosing),
+                                min_approved: Number(negMinApproved),
+                                status: val,
+                                outcome: negOutcome || null,
+                                notes: negNotes,
+                                discounts: negDiscounts,
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-9 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="started">Started</SelectItem>
+                              <SelectItem value="reviewing">Reviewing Offer</SelectItem>
+                              <SelectItem value="waiting_approval">Waiting Approval</SelectItem>
+                              <SelectItem value="counter_sent">Counter Offer Sent</SelectItem>
+                              <SelectItem value="agreed">Agreement Reached</SelectItem>
+                              <SelectItem value="failed">Failed</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Gap Tracker Calculator */}
+                      {negCurrentOffer > 0 && negCustBudget > 0 && (
+                        <div className="p-3 bg-muted/20 rounded-xl border border-border/50 space-y-2 mt-4 text-xs">
+                          <div className="flex justify-between items-center">
+                            <div className="space-y-0.5">
+                              <span className="text-muted-foreground">
+                                Remaining Gap Difference:
+                              </span>
+                              <div className="font-bold text-foreground text-sm">
+                                {negCurrentOffer - negCustBudget > 0
+                                  ? formatINR(negCurrentOffer - negCustBudget)
+                                  : "Gap Cleared! Deal aligned."}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-muted-foreground">Total Discount Offered:</span>
+                              <div className="font-bold text-rose-500 font-mono">
+                                {negOrigPrice - negCurrentOffer > 0
+                                  ? `${formatINR(negOrigPrice - negCurrentOffer)} (${(((negOrigPrice - negCurrentOffer) / negOrigPrice) * 100).toFixed(1)}%)`
+                                  : "None"}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="h-2 w-full bg-muted rounded-full overflow-hidden relative">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${Math.min(100, Math.max(0, (1 - (negCurrentOffer - negCustBudget) / negCurrentOffer) * 100))}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. Visual Negotiation Progress Indicator */}
+                    <div className="p-5 border rounded-xl bg-card text-left space-y-3">
+                      <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-wider">
+                        Negotiation Journey Progress
+                      </h4>
+                      <div className="flex items-center justify-between text-xs font-medium text-muted-foreground/80 flex-wrap gap-2 pt-2">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground">Original Price</span>
+                          <span className="px-2.5 py-1 rounded-full border bg-muted text-foreground font-mono">
+                            {formatINR(negOrigPrice)}
+                          </span>
+                        </div>
+                        <span className="text-muted-foreground">➔</span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground">Current Offer</span>
+                          <span className="px-2.5 py-1 rounded-full border border-primary/20 bg-primary-soft text-primary font-bold font-mono">
+                            {formatINR(negCurrentOffer)}
+                          </span>
+                        </div>
+                        <span className="text-muted-foreground">➔</span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground">
+                            Customer Expectation
+                          </span>
+                          <span className="px-2.5 py-1 rounded-full border bg-muted text-foreground font-mono">
+                            {formatINR(negCustBudget)}
+                          </span>
+                        </div>
+                        <span className="text-muted-foreground">➔</span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground">Target Closing</span>
+                          <span className="px-2.5 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-600 font-bold font-mono">
+                            {formatINR(negExpectedClosing)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Discount Management Perks */}
+                    <div className="p-5 border rounded-xl bg-card text-left space-y-4">
+                      <div>
+                        <h4 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                          <Tag className="h-4 w-4 text-rose-500" /> Commercial Perks & Discounts
+                        </h4>
+                        <p className="text-[10px] text-muted-foreground">
+                          Record commercial benefits and packages approved for the final quotation.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+                        {[
+                          "Price Discount",
+                          "Floor Rise Waiver",
+                          "Parking Free",
+                          "Registration Discount",
+                          "Club Membership",
+                          "Maintenance Waiver",
+                          "Interior Package",
+                          "Gold Coin Offer",
+                          "Festival Offer",
+                          "Referral Benefit",
+                          "Cashback Scheme",
+                        ].map((perk) => {
+                          const checked = negDiscounts.includes(perk);
+                          return (
+                            <label
+                              key={perk}
+                              className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer hover:bg-muted/30 transition-all ${
+                                checked
+                                  ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-600 font-semibold"
+                                  : "border-border text-muted-foreground"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                disabled={customer.stage !== "negotiation"}
+                                checked={checked}
+                                onChange={() => handleToggleDiscount(perk)}
+                                className="rounded border-border/80 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
+                              />
+                              {perk}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 4. Manager Approval Callout */}
+                    {negStatus === "waiting_approval" && (
+                      <div className="p-5 border border-amber-500/30 bg-amber-500/10 rounded-xl text-left space-y-4">
+                        <div className="flex gap-2">
+                          <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <h4 className="font-bold text-sm text-foreground">
+                              Discount Approval Action Needed
+                            </h4>
+                            <p className="text-xs text-muted-foreground">
+                              An offer of{" "}
+                              <strong className="text-foreground">
+                                {formatINR(negCurrentOffer)}
+                              </strong>{" "}
+                              has been proposed, which is below the approved threshold of{" "}
+                              <strong className="text-foreground">
+                                {formatINR(negMinApproved)}
+                              </strong>
+                              .
+                            </p>
+                          </div>
+                        </div>
+
+                        {role !== "sales_executive" ? (
+                          <div className="space-y-3 pt-2 border-t border-amber-500/20">
+                            <p className="text-xs text-foreground font-semibold">
+                              Manager Review Panel:
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                                onClick={() => handleManagerDecision("approve")}
+                              >
+                                Approve Offer
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="text-xs font-semibold"
+                                onClick={() => handleManagerDecision("reject")}
+                              >
+                                Reject Offer
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-amber-500/30 hover:bg-amber-500/10 text-amber-600 text-xs font-semibold bg-transparent"
+                                onClick={() => {
+                                  const amt = prompt("Enter manager counter offer amount (INR):");
+                                  if (amt) {
+                                    const parsed = parseFloat(amt);
+                                    if (!isNaN(parsed)) handleManagerDecision("counter", parsed);
+                                  }
+                                }}
+                              >
+                                Counter Propose Price
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground leading-normal italic">
+                            Waiting for a Manager, Admin or Super Admin to review this pricing
+                            block.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 5. Booking Pre-fill Indicator */}
+                    {negStatus === "agreed" && (
+                      <div className="p-4 border border-emerald-500/30 bg-emerald-500/10 rounded-xl text-left flex items-start gap-3">
+                        <Check className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-sm text-foreground">
+                            Commercial Agreement Aligned!
+                          </h4>
+                          <p className="text-xs text-muted-foreground leading-normal">
+                            All negotiation milestones have been met. When you proceed to unit
+                            holding reservation in the{" "}
+                            <strong className="text-foreground">Bookings</strong> tab, the final
+                            price of{" "}
+                            <strong className="text-foreground">
+                              {formatINR(negCurrentOffer)}
+                            </strong>{" "}
+                            will be inherited automatically.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 6. Customer Mindset Sentiment & Notes */}
+                    <div className="p-5 border rounded-xl bg-card text-left space-y-4">
+                      <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-wider">
+                        Customer Mindset & Notes
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Customer Mindset Sentiment</Label>
+                          <Select
+                            disabled={customer.stage !== "negotiation"}
+                            value={negOutcome || "interested"}
+                            onValueChange={(val) => {
+                              setNegOutcome(val);
+                              handleSaveNegotiation({
+                                original_price: Number(negOrigPrice),
+                                current_offer: Number(negCurrentOffer),
+                                expected_closing: Number(negExpectedClosing),
+                                min_approved: Number(negMinApproved),
+                                status: negStatus,
+                                outcome: val,
+                                notes: negNotes,
+                                discounts: negDiscounts,
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-9 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="interested">Interested</SelectItem>
+                              <SelectItem value="needs_family">Needs Family Discussion</SelectItem>
+                              <SelectItem value="comparing">Comparing Projects</SelectItem>
+                              <SelectItem value="waiting_loan">Waiting for Loan</SelectItem>
+                              <SelectItem value="budget_constraint">Budget Constraint</SelectItem>
+                              <SelectItem value="ready_book">Ready to Book</SelectItem>
+                              <SelectItem value="not_interested">Not Interested</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Negotiation Discussion Notes</Label>
+                          <textarea
+                            disabled={customer.stage !== "negotiation"}
+                            className="w-full text-xs p-2.5 border rounded-xl bg-card focus:outline-none focus:ring-1 focus:ring-primary min-h-[60px]"
+                            placeholder="Add brief details about concerns, possession concerns, loan, Clubhouse, etc..."
+                            value={negNotes}
+                            onChange={(e) => setNegNotes(e.target.value)}
+                            onBlur={() => handleSaveNegotiation()}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Timeline discussion log feed */}
+                  <div className="xl:col-span-4 space-y-5">
+                    {/* Add Timeline Discussion Entry form */}
+                    {customer.stage === "negotiation" && (
+                      <div className="p-4 border rounded-xl bg-card text-left space-y-3">
+                        <h4 className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                          <Plus className="h-4 w-4 text-primary" /> Log Discussion Round
+                        </h4>
+
+                        <form onSubmit={handleAddRound} className="space-y-2.5">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">
+                              Action Taken
+                            </Label>
+                            <div className="flex gap-1">
+                              {!isCustomAction ? (
+                                <Select value={roundAction} onValueChange={setRoundAction}>
+                                  <SelectTrigger className="h-8 text-xs flex-1">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Initial quotation">
+                                      Initial quotation
+                                    </SelectItem>
+                                    <SelectItem value="Customer counter offer">
+                                      Customer counter offer
+                                    </SelectItem>
+                                    <SelectItem value="Revised offer">Revised offer</SelectItem>
+                                    <SelectItem value="Executive updated offer">
+                                      Executive updated offer
+                                    </SelectItem>
+                                    <SelectItem value="Waiting for decision">
+                                      Waiting for decision
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  className="h-8 text-xs flex-1"
+                                  placeholder="Type action taken..."
+                                  value={customActionText}
+                                  onChange={(e) => setCustomActionText(e.target.value)}
+                                />
+                              )}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 text-[10px]"
+                                onClick={() => setIsCustomAction(!isCustomAction)}
+                              >
+                                {isCustomAction ? "Select" : "Custom"}
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">
+                              Offer Price (Optional)
+                            </Label>
+                            <Input
+                              type="number"
+                              className="h-8 text-xs font-mono"
+                              placeholder={`Default: ${negCurrentOffer}`}
+                              value={roundOffer}
+                              onChange={(e) => setRoundOffer(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">
+                              Customer Response
+                            </Label>
+                            <Input
+                              className="h-8 text-xs"
+                              placeholder="e.g. Requested waiver, refused offer"
+                              value={roundResponse}
+                              onChange={(e) => setRoundResponse(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">
+                              Round Discussion Notes
+                            </Label>
+                            <textarea
+                              className="w-full text-xs p-2 border rounded bg-card min-h-[40px] focus:outline-none"
+                              placeholder="e.g. Loan issue pending"
+                              value={roundNotes}
+                              onChange={(e) => setRoundNotes(e.target.value)}
+                            />
+                          </div>
+
+                          <Button
+                            type="submit"
+                            size="sm"
+                            className="w-full text-xs h-8 font-semibold"
+                          >
+                            Submit Discussion Round
+                          </Button>
+                        </form>
+                      </div>
+                    )}
+
+                    {/* Timeline Log Feed */}
+                    <div className="p-4 border rounded-xl bg-card text-left space-y-3">
+                      <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" /> Discussion History Log
+                      </h4>
+
+                      <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+                        {(negData?.timeline || [])
+                          .slice()
+                          .reverse()
+                          .map((round: any, idx: number) => (
+                            <div
+                              key={round.id || idx}
+                              className="relative pl-4 border-l border-border/80 space-y-1 pb-1"
+                            >
+                              <div className="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
+                              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                                <span className="font-semibold text-foreground">
+                                  {round.executive}
+                                </span>
+                                <span className="font-mono">
+                                  {new Date(round.created_at || Date.now()).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div className="text-xs font-bold text-foreground leading-tight flex items-center gap-1.5 flex-wrap">
+                                {round.action_taken}
+                                {round.offer_amount > 0 && (
+                                  <span className="px-1.5 py-0.25 rounded bg-muted text-[10px] font-semibold font-mono text-muted-foreground">
+                                    {formatINR(round.offer_amount)}
+                                  </span>
+                                )}
+                              </div>
+                              {round.customer_response && (
+                                <p className="text-[11px] text-primary font-medium leading-normal">
+                                  ➔ {round.customer_response}
+                                </p>
+                              )}
+                              {round.notes && (
+                                <p className="text-[10px] text-muted-foreground leading-tight bg-muted/30 p-1.5 rounded-md font-sans">
+                                  {round.notes}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        {(!negData?.timeline || negData.timeline.length === 0) && (
+                          <p className="text-xs text-muted-foreground py-2 text-center">
+                            No discussion entries logged yet.
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </TabsContent>

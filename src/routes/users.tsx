@@ -1,7 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +43,10 @@ import {
   resetCRMUserPassword,
   deleteCRMUser,
   toggleCRMUserStatus,
+  useUpdateUserAssignmentStatus,
+  useProjects,
 } from "@/lib/queries";
+
 import { toast } from "sonner";
 import {
   Users,
@@ -90,6 +100,10 @@ function UsersPage() {
   // Loading/Busy overlays
   const [busyUser, setBusyUser] = useState<string | null>(null);
 
+  // These hooks must be called unconditionally before any early returns (React rules of hooks)
+  const updateUserAssignment = useUpdateUserAssignmentStatus();
+  const { data: projects = [] } = useProjects();
+
   if (!hasAccess) {
     return (
       <AppShell title="Access Denied" subtitle="Security Exception">
@@ -97,7 +111,8 @@ function UsersPage() {
           <ShieldAlert className="h-16 w-16 text-destructive mx-auto animate-bounce" />
           <h2 className="text-xl font-bold text-foreground">Unauthorized Access</h2>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            You do not have administrative privileges to access this area. If you believe this is an error, please contact your Super Administrator.
+            You do not have administrative privileges to access this area. If you believe this is an
+            error, please contact your Super Administrator.
           </p>
           <Button onClick={() => navigate({ to: "/" })} className="w-full">
             Back to Dashboard
@@ -181,7 +196,12 @@ function UsersPage() {
       toast.error("Security Exception: Only Super Admins can hard delete users.");
       return;
     }
-    if (!confirm("Are you absolutely sure you want to permanently delete this user? This cannot be undone.")) return;
+    if (
+      !confirm(
+        "Are you absolutely sure you want to permanently delete this user? This cannot be undone.",
+      )
+    )
+      return;
 
     setBusyUser(userId);
     try {
@@ -203,17 +223,40 @@ function UsersPage() {
         return "bg-blue-500/10 text-blue-500 border-blue-500/20";
       case "manager":
         return "bg-purple-500/10 text-purple-500 border-purple-500/20";
+      case "marketing":
+        return "bg-cyan-500/10 text-cyan-500 border-cyan-500/20";
       default:
         return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
     }
   };
 
-  const formatRole = (uRole: string) => {
-    return uRole.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const formatRole = (uRole: string = "sales_executive") => {
+    return (uRole || "sales_executive")
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  };
+
+  const handleAssignmentStatusChange = async (
+    userId: string,
+    newStatus: "available" | "paused" | "inactive",
+  ) => {
+    setBusyUser(userId);
+    try {
+      await updateUserAssignment.mutateAsync({ id: userId, assignment_status: newStatus });
+      toast.success(`Assignment status updated to ${newStatus.toUpperCase()}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update assignment status");
+    } finally {
+      setBusyUser(null);
+    }
   };
 
   return (
-    <AppShell title="Users Management" subtitle="Manage CRM users, permissions, status toggles, and credentials">
+    <AppShell
+      title="Users Management"
+      subtitle="Manage CRM users, permissions, lead assignment availability, and credentials"
+    >
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -227,9 +270,12 @@ function UsersPage() {
 
         <Card className="border border-border bg-card shadow-lg">
           <CardHeader className="text-left pb-3 border-b border-border/40">
-            <CardTitle className="text-base font-bold text-foreground">CRM Accounts</CardTitle>
+            <CardTitle className="text-base font-bold text-foreground">
+              CRM Accounts & Lead Distribution
+            </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              A list of all users registered within the CRM. You can configure their security perspectives here.
+              Configure user access, active status, and Lead Assignment Engine availability
+              (Available 🟢, Paused ⏸, Inactive 🔴).
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -248,85 +294,120 @@ function UsersPage() {
                     <TableHead>User Details</TableHead>
                     <TableHead>Role Perspective</TableHead>
                     <TableHead>Account Status</TableHead>
+                    <TableHead>Lead Assignment Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.id} className={u.isDisabled ? "opacity-60 bg-muted/20" : ""}>
-                      <TableCell className="text-left font-medium">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold text-foreground">{u.name}</span>
-                          <span className="text-xs text-muted-foreground">{u.email}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-left">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getRoleBadge(u.role)}`}>
-                          {formatRole(u.role)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-left">
-                        {u.isDisabled ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-destructive">
-                            <XCircle className="h-3.5 w-3.5" /> Deactivated
+                  {users.map((u) => {
+                    const currentAssignmentStatus =
+                      u.assignment_status || (u.isDisabled ? "inactive" : "available");
+                    return (
+                      <TableRow key={u.id} className={u.isDisabled ? "opacity-60 bg-muted/20" : ""}>
+                        <TableCell className="text-left font-medium">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-foreground">{u.name}</span>
+                            <span className="text-xs text-muted-foreground">{u.email}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-left">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getRoleBadge(u.role)}`}
+                          >
+                            {formatRole(u.role)}
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500">
-                            <CheckCircle className="h-3.5 w-3.5" /> Active
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={busyUser === u.id}
-                            onClick={() => {
-                              setEditingUser(u);
-                              setEditRole(u.role);
-                            }}
-                            title="Edit Role"
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        </TableCell>
+                        <TableCell className="text-left">
+                          {u.isDisabled ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-destructive">
+                              <XCircle className="h-3.5 w-3.5" /> Deactivated
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500">
+                              <CheckCircle className="h-3.5 w-3.5" /> Active
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-left">
+                          <Select
+                            value={currentAssignmentStatus}
+                            disabled={busyUser === u.id || u.isDisabled}
+                            onValueChange={(val) => handleAssignmentStatusChange(u.id, val as any)}
                           >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={busyUser === u.id}
-                            onClick={() => setResettingUser(u)}
-                            title="Reset Password"
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                          >
-                            <KeyRound className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            disabled={busyUser === u.id}
-                            onClick={() => handleToggleStatus(u)}
-                            title={u.isDisabled ? "Activate User" : "Deactivate User"}
-                            className={`h-8 w-8 ${u.isDisabled ? "text-emerald-500 hover:bg-emerald-500/10" : "text-amber-500 hover:bg-amber-500/10"}`}
-                          >
-                            <Power className="h-3.5 w-3.5" />
-                          </Button>
-                          {role === "super_admin" && (
+                            <SelectTrigger className="h-8 text-xs font-semibold w-[130px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="available">
+                                <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
+                                  🟢 Available
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="paused">
+                                <span className="flex items-center gap-1.5 text-amber-600 font-bold">
+                                  ⏸ Paused
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="inactive">
+                                <span className="flex items-center gap-1.5 text-destructive font-bold">
+                                  🔴 Inactive
+                                </span>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1.5">
                             <Button
                               variant="ghost"
                               size="icon"
                               disabled={busyUser === u.id}
-                              onClick={() => handleDeleteUser(u.id)}
-                              title="Delete User"
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                setEditingUser(u);
+                                setEditRole(u.role);
+                              }}
+                              title="Edit Role"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Edit2 className="h-3.5 w-3.5" />
                             </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              disabled={busyUser === u.id}
+                              onClick={() => setResettingUser(u)}
+                              title="Reset Password"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            >
+                              <KeyRound className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              disabled={busyUser === u.id}
+                              onClick={() => handleToggleStatus(u)}
+                              title={u.isDisabled ? "Activate User" : "Deactivate User"}
+                              className={`h-8 w-8 ${u.isDisabled ? "text-emerald-500 hover:bg-emerald-500/10" : "text-amber-500 hover:bg-amber-500/10"}`}
+                            >
+                              <Power className="h-3.5 w-3.5" />
+                            </Button>
+                            {role === "super_admin" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                disabled={busyUser === u.id}
+                                onClick={() => handleDeleteUser(u.id)}
+                                title="Delete User"
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -397,6 +478,7 @@ function UsersPage() {
                     <SelectItem value="sales_executive">💼 Sales Executive</SelectItem>
                     <SelectItem value="manager">🛡️ Manager</SelectItem>
                     <SelectItem value="admin">🛠️ Admin Operations</SelectItem>
+                    <SelectItem value="marketing">📢 Marketing</SelectItem>
                     {role === "super_admin" && (
                       <SelectItem value="super_admin">👑 Super Admin</SelectItem>
                     )}
@@ -430,7 +512,8 @@ function UsersPage() {
                 <Edit2 className="h-5 w-5 text-primary" /> Modify Role Perspective
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-1">
-                Change the assigned security role for <span className="font-bold text-foreground">{editingUser?.name}</span>.
+                Change the assigned security role for{" "}
+                <span className="font-bold text-foreground">{editingUser?.name}</span>.
               </DialogDescription>
             </DialogHeader>
 
@@ -445,6 +528,7 @@ function UsersPage() {
                     <SelectItem value="sales_executive">💼 Sales Executive</SelectItem>
                     <SelectItem value="manager">🛡️ Manager</SelectItem>
                     <SelectItem value="admin">🛠️ Admin Operations</SelectItem>
+                    <SelectItem value="marketing">📢 Marketing</SelectItem>
                     {role === "super_admin" && (
                       <SelectItem value="super_admin">👑 Super Admin</SelectItem>
                     )}
@@ -471,14 +555,18 @@ function UsersPage() {
         </Dialog>
 
         {/* Password Reset Modal */}
-        <Dialog open={resettingUser !== null} onOpenChange={(open) => !open && setResettingUser(null)}>
+        <Dialog
+          open={resettingUser !== null}
+          onOpenChange={(open) => !open && setResettingUser(null)}
+        >
           <DialogContent className="max-w-md bg-card text-left rounded-xl border border-border shadow-2xl p-6">
             <DialogHeader>
               <DialogTitle className="text-base font-bold font-display text-foreground flex items-center gap-2">
                 <KeyRound className="h-5 w-5 text-primary" /> Reset Account Password
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-1">
-                Enter a new secure password for <span className="font-bold text-foreground">{resettingUser?.name}</span>.
+                Enter a new secure password for{" "}
+                <span className="font-bold text-foreground">{resettingUser?.name}</span>.
               </DialogDescription>
             </DialogHeader>
 

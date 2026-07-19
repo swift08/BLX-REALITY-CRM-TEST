@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
@@ -38,7 +38,10 @@ import {
   EyeOff,
   Clock,
   Tag,
+  Receipt,
+  Workflow,
 } from "lucide-react";
+
 import {
   Dialog,
   DialogContent,
@@ -182,6 +185,56 @@ function CompanyTab({ role }: { role: AppRole | null }) {
 
   return (
     <div className="space-y-6">
+      {/* Lead Assignment Engine Banner */}
+      <Card className="bg-primary/5 border-primary/20">
+        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold shrink-0">
+              <Workflow className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="font-bold text-sm text-foreground">
+                Lead Assignment Engine Pipeline
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Configure round-robin distribution strategies, project/source routing, executive
+                availability status, and SLA response rules.
+              </p>
+            </div>
+          </div>
+          <Link to="/lead-assignment-settings">
+            <Button size="sm" className="gap-1.5 text-xs whitespace-nowrap">
+              Manage Lead Engine
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+
+      {/* Invoice CMS Banner */}
+      <Card className="bg-primary/5 border-primary/20">
+        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold shrink-0">
+              <Receipt className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="font-bold text-sm text-foreground">
+                Dedicated Invoice CMS & Branding Center
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Configure company address, bank account escrow details, statutory GST, brand themes,
+                and role permissions.
+              </p>
+            </div>
+          </div>
+          <Link to="/invoice-cms">
+            <Button size="sm" className="gap-1.5 text-xs whitespace-nowrap">
+              Manage Invoice CMS
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -371,6 +424,7 @@ function TeamTab({ role, user }: { role: AppRole | null; user: any }) {
     admin: "bg-indigo-500/10 text-indigo-600",
     manager: "bg-purple-500/10 text-purple-600",
     sales_executive: "bg-emerald-500/10 text-emerald-600",
+    marketing: "bg-pink-500/10 text-pink-600",
   };
 
   const roleLabels: Record<AppRole, string> = {
@@ -378,6 +432,7 @@ function TeamTab({ role, user }: { role: AppRole | null; user: any }) {
     admin: "Admin",
     manager: "Manager",
     sales_executive: "Sales Executive",
+    marketing: "Marketing",
   };
 
   return (

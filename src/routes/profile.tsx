@@ -1,7 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +25,9 @@ export const Route = createFileRoute("/profile")({
 
 function ProfilePage() {
   const { user, role } = useAuth();
-  const [name, setName] = useState(user?.user_metadata?.full_name || user?.email?.split("@")[0] || "");
+  const [name, setName] = useState(
+    user?.user_metadata?.full_name || user?.email?.split("@")[0] || "",
+  );
   const [phone, setPhone] = useState(user?.user_metadata?.phone || "");
   const [busy, setBusy] = useState(false);
 
@@ -31,7 +40,7 @@ function ProfilePage() {
     setBusy(true);
     try {
       await updateUserProfile(name, phone);
-      
+
       // Update session storage so that changes are immediately reflected in the UI
       const sessionStr = localStorage.getItem("blx-realty-session");
       if (sessionStr) {
@@ -45,7 +54,7 @@ function ProfilePage() {
           localStorage.setItem("blx-realty-session", JSON.stringify(parsed));
         }
       }
-      
+
       toast.success("Profile updated successfully!");
       // Reload page to propagate changes
       setTimeout(() => {
@@ -73,7 +82,10 @@ function ProfilePage() {
 
   const formatRole = (r: string | null) => {
     if (!r) return "User";
-    return r.split("_").map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    return r
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
   };
 
   return (
@@ -102,8 +114,12 @@ function ProfilePage() {
               <div className="flex items-center gap-2.5 py-1">
                 <Shield className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="flex-1">
-                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">Role</div>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border mt-0.5 ${getRoleBadgeColor(role)}`}>
+                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+                    Role
+                  </div>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border mt-0.5 ${getRoleBadgeColor(role)}`}
+                  >
                     {formatRole(role)}
                   </span>
                 </div>
@@ -111,25 +127,41 @@ function ProfilePage() {
               <div className="flex items-center gap-2.5 py-1">
                 <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="flex-1">
-                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">Department</div>
+                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+                    Department
+                  </div>
                   <span className="text-xs font-semibold text-foreground">
-                    {role === "sales_executive" ? "Sales & Acquisitions" : role === "manager" ? "Sales Management" : "Operations"}
+                    {role === "sales_executive"
+                      ? "Sales & Acquisitions"
+                      : role === "manager"
+                        ? "Sales Management"
+                        : "Operations"}
                   </span>
                 </div>
               </div>
               <div className="flex items-center gap-2.5 py-1">
                 <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="flex-1">
-                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">Joined At</div>
+                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+                    Joined At
+                  </div>
                   <span className="text-xs font-semibold text-foreground">
-                    {user?.created_at ? new Date(user.created_at).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" }) : "July 18, 2026"}
+                    {user?.created_at
+                      ? new Date(user.created_at).toLocaleDateString([], {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "July 18, 2026"}
                   </span>
                 </div>
               </div>
               <div className="flex items-center gap-2.5 py-1">
                 <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
                 <div className="flex-1">
-                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">Account Status</div>
+                  <div className="text-[10px] text-muted-foreground uppercase font-semibold">
+                    Account Status
+                  </div>
                   <span className="text-xs font-bold text-emerald-500">Active</span>
                 </div>
               </div>
@@ -142,7 +174,9 @@ function ProfilePage() {
           {/* Card Right: Editable Profile Details */}
           <Card className="md:col-span-2 border border-border bg-card shadow-lg">
             <CardHeader className="text-left border-b border-border/40">
-              <CardTitle className="text-base font-bold text-foreground">Edit Profile Information</CardTitle>
+              <CardTitle className="text-base font-bold text-foreground">
+                Edit Profile Information
+              </CardTitle>
               <CardDescription className="text-xs text-muted-foreground">
                 Update your personal info, like display name and direct phone number.
               </CardDescription>

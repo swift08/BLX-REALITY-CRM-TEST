@@ -1,5 +1,5 @@
 -- ==========================================
--- 1. DATABASE SCHEMA DDL FOR SUPABASE
+-- DATABASE SCHEMA DDL FOR SUPABASE
 -- ==========================================
 
 -- Enable pgcrypto for gen_random_uuid()
@@ -31,7 +31,23 @@ CREATE TABLE IF NOT EXISTS projects (
     brochures JSONB DEFAULT '[]'::jsonb NOT NULL,
     floor_plans JSONB DEFAULT '[]'::jsonb NOT NULL,
     documents JSONB DEFAULT '[]'::jsonb NOT NULL,
-    gallery_images JSONB DEFAULT '[]'::jsonb NOT NULL
+    gallery_images JSONB DEFAULT '[]'::jsonb NOT NULL,
+    status TEXT DEFAULT 'New Launch' NOT NULL,
+    property_type TEXT DEFAULT 'Apartment' NOT NULL,
+    possession_timeline TEXT,
+    project_size TEXT,
+    rera_number TEXT,
+    cover_image_url TEXT
+);
+
+-- Project Configurations Table
+CREATE TABLE IF NOT EXISTS project_configurations (
+    id TEXT PRIMARY KEY DEFAULT 'config-' || substring(gen_random_uuid()::text from 1 for 8),
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_by TEXT,
+    UNIQUE(project_id, name)
 );
 
 -- Customers Table
@@ -47,7 +63,9 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     created_by TEXT,
     is_deleted BOOLEAN DEFAULT false,
-    "timeline" JSONB DEFAULT '[]'::jsonb NOT NULL
+    "timeline" JSONB DEFAULT '[]'::jsonb NOT NULL,
+    meta_lead_id TEXT UNIQUE,
+    meta_metadata JSONB DEFAULT '{}'::jsonb NOT NULL
 );
 
 -- Opportunities Table
@@ -72,7 +90,9 @@ CREATE TABLE IF NOT EXISTS inventory (
     area NUMERIC,
     price NUMERIC,
     status TEXT DEFAULT 'available' NOT NULL,
-    reserved_by TEXT REFERENCES customers(id) ON DELETE SET NULL
+    reserved_by TEXT REFERENCES customers(id) ON DELETE SET NULL,
+    configuration_id TEXT REFERENCES project_configurations(id) ON DELETE SET NULL,
+    CONSTRAINT unique_project_unit UNIQUE (project_id, unit_number)
 );
 
 -- Bookings Table
@@ -103,7 +123,7 @@ CREATE TABLE IF NOT EXISTS payments (
     reference TEXT NOT NULL
 );
 
--- Activities Table
+-- Activities Table (Legacy)
 CREATE TABLE IF NOT EXISTS activities (
     id TEXT PRIMARY KEY DEFAULT 'act-' || substring(gen_random_uuid()::text from 1 for 8),
     customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE NOT NULL,
@@ -113,7 +133,7 @@ CREATE TABLE IF NOT EXISTS activities (
     next_followup TIMESTAMP WITH TIME ZONE
 );
 
--- Communication Logs Table
+-- Communication Logs Table (Legacy)
 CREATE TABLE IF NOT EXISTS communications (
     id TEXT PRIMARY KEY DEFAULT 'comm-' || substring(gen_random_uuid()::text from 1 for 8),
     customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE NOT NULL,
@@ -122,6 +142,19 @@ CREATE TABLE IF NOT EXISTS communications (
     summary TEXT,
     details TEXT,
     time TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Interactions Table
+CREATE TABLE IF NOT EXISTS interactions (
+    id TEXT PRIMARY KEY DEFAULT 'int-' || substring(gen_random_uuid()::text from 1 for 8),
+    customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE NOT NULL,
+    type TEXT NOT NULL,
+    direction TEXT DEFAULT 'outbound' NOT NULL,
+    summary TEXT NOT NULL,
+    details TEXT,
+    time TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    next_followup TIMESTAMP WITH TIME ZONE,
+    created_by TEXT DEFAULT 'System'
 );
 
 -- Documents Table
@@ -156,7 +189,8 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     end_time TIMESTAMP WITH TIME ZONE NOT NULL,
     customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
     sales_person TEXT,
-    details TEXT
+    details TEXT,
+    status TEXT DEFAULT 'pending' NOT NULL
 );
 
 -- Workflow Rules Table
@@ -216,6 +250,54 @@ CREATE TABLE IF NOT EXISTS settings (
     escalation_sla_hours INTEGER DEFAULT 2
 );
 
+-- Invoice Settings Table (CMS)
+CREATE TABLE IF NOT EXISTS invoice_settings (
+    id TEXT PRIMARY KEY DEFAULT 'inv_settings_default',
+    company_info JSONB DEFAULT '{}'::jsonb NOT NULL,
+    banking_details JSONB DEFAULT '{}'::jsonb NOT NULL,
+    tax_statutory JSONB DEFAULT '{}'::jsonb NOT NULL,
+    invoice_notes JSONB DEFAULT '{}'::jsonb NOT NULL,
+    branding JSONB DEFAULT '{}'::jsonb NOT NULL,
+    numbering JSONB DEFAULT '{}'::jsonb NOT NULL,
+    payment_info JSONB DEFAULT '{}'::jsonb NOT NULL,
+    default_template_id TEXT DEFAULT 'modern_executive' NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_by TEXT
+);
+
+-- Invoice Role Permissions Table
+CREATE TABLE IF NOT EXISTS invoice_role_permissions (
+    role TEXT PRIMARY KEY,
+    can_view_cms BOOLEAN DEFAULT true NOT NULL,
+    can_edit_company_info BOOLEAN DEFAULT false NOT NULL,
+    can_update_banking BOOLEAN DEFAULT false NOT NULL,
+    can_modify_tax BOOLEAN DEFAULT false NOT NULL,
+    can_edit_terms BOOLEAN DEFAULT false NOT NULL,
+    can_change_branding BOOLEAN DEFAULT false NOT NULL,
+    can_manage_templates BOOLEAN DEFAULT false NOT NULL,
+    can_generate_invoices BOOLEAN DEFAULT true NOT NULL,
+    can_regenerate_invoices BOOLEAN DEFAULT false NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_by TEXT
+);
+
+
+-- Meta Webhook Logs Table
+CREATE TABLE IF NOT EXISTS meta_webhook_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    leadgen_id TEXT,
+    page_id TEXT,
+    form_id TEXT,
+    event_type TEXT,
+    status TEXT, -- 'RECEIVED', 'PROCESSED', 'FAILED', 'DUPLICATE'
+    error_message TEXT,
+    payload JSONB DEFAULT '{}'::jsonb NOT NULL,
+    received_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    processed_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_meta_logs_leadgen ON meta_webhook_logs(leadgen_id);
+
 -- (No seed data or auth users are created so the database returns no rows on initialization)
 
 -- Revoke execution rights on SECURITY DEFINER functions from public roles if the function exists
@@ -240,10 +322,14 @@ END $$;
 ALTER TABLE customers
   ADD COLUMN IF NOT EXISTS timeline JSONB DEFAULT '[]'::jsonb NOT NULL;
 
--- Step 2: Backfill any existing rows that might have NULL (safety net)
 UPDATE customers
   SET timeline = '[]'::jsonb
   WHERE timeline IS NULL;
+
+-- Step 2: Add Meta tracking columns to the customers table if not already present
+ALTER TABLE customers
+  ADD COLUMN IF NOT EXISTS meta_lead_id TEXT UNIQUE,
+  ADD COLUMN IF NOT EXISTS meta_metadata JSONB DEFAULT '{}'::jsonb NOT NULL;
 
 -- Step 3: Add file catalog columns to developers table if not already present
 ALTER TABLE developers
@@ -259,7 +345,52 @@ ALTER TABLE projects
   ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]'::jsonb NOT NULL,
   ADD COLUMN IF NOT EXISTS gallery_images JSONB DEFAULT '[]'::jsonb NOT NULL;
 
--- Step 5: Confirm column existence
+-- Step 5: Add configuration_id to the inventory (units) table if not already present
+ALTER TABLE inventory
+  ADD COLUMN IF NOT EXISTS configuration_id TEXT REFERENCES project_configurations(id) ON DELETE SET NULL;
+
+-- Step 6: Migrate plain text configurations to project_configurations table
+INSERT INTO project_configurations (project_id, name, created_by)
+SELECT DISTINCT project_id, configuration, 'System Migration'
+FROM inventory
+WHERE configuration IS NOT NULL AND configuration <> ''
+ON CONFLICT (project_id, name) DO NOTHING;
+
+UPDATE inventory i
+SET configuration_id = pc.id
+FROM project_configurations pc
+WHERE i.project_id = pc.project_id AND i.configuration = pc.name AND i.configuration_id IS NULL;
+
+-- Step 7: Migrate legacy activities into new interactions table
+INSERT INTO interactions (id, customer_id, type, direction, summary, details, time, next_followup, created_by)
+SELECT 
+    id, 
+    customer_id, 
+    type, 
+    'outbound', 
+    summary, 
+    '', 
+    time, 
+    next_followup, 
+    'System Migration'
+FROM activities
+ON CONFLICT (id) DO NOTHING;
+
+-- Step 8: Migrate legacy communications into new interactions table
+INSERT INTO interactions (id, customer_id, type, direction, summary, details, time, created_by)
+SELECT 
+    id, 
+    customer_id, 
+    type, 
+    direction, 
+    summary, 
+    details, 
+    time, 
+    'System Migration'
+FROM communications
+ON CONFLICT (id) DO NOTHING;
+
+-- Step 9: Confirm column existence
 DO $$
 BEGIN
   IF EXISTS (
@@ -273,3 +404,142 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- Step 10: Add status column to calendar_events table if not already present
+ALTER TABLE calendar_events
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending' NOT NULL;
+
+-- ============================================================
+-- LEAD ASSIGNMENT ENGINE TABLES & MIGRATIONS
+-- ============================================================
+
+-- Lead Assignment Settings Table
+CREATE TABLE IF NOT EXISTS lead_assignment_settings (
+    id TEXT PRIMARY KEY DEFAULT 'default_assignment_settings',
+    distribution_strategy TEXT DEFAULT 'round_robin' NOT NULL, -- 'round_robin' | 'project_based' | 'source_based' | 'manual' | 'capacity_based'
+    auto_assign_leads BOOLEAN DEFAULT true NOT NULL,
+    skip_paused_users BOOLEAN DEFAULT true NOT NULL,
+    skip_inactive_users BOOLEAN DEFAULT true NOT NULL,
+    enable_project_routing BOOLEAN DEFAULT false NOT NULL,
+    enable_source_routing BOOLEAN DEFAULT false NOT NULL,
+    allow_manager_override BOOLEAN DEFAULT true NOT NULL,
+    maintain_assignment_history BOOLEAN DEFAULT true NOT NULL,
+    source_routes JSONB DEFAULT '{
+      "Facebook": "Sales Executive",
+      "Instagram": "Sales Executive",
+      "Website": "Sales Executive",
+      "Referral": "Sales Executive",
+      "Walk-in": "Sales Executive",
+      "Landing Page": "Sales Executive"
+    }'::jsonb NOT NULL,
+    sla_first_contact_mins INTEGER DEFAULT 30 NOT NULL,
+    sla_manager_escalate_hours INTEGER DEFAULT 2 NOT NULL,
+    sla_auto_reassign_hours INTEGER DEFAULT 24 NOT NULL,
+    last_assigned_index_map JSONB DEFAULT '{}'::jsonb NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_by TEXT DEFAULT 'System'
+);
+
+-- Lead Assignment History (Audit Trail) Table
+CREATE TABLE IF NOT EXISTS lead_assignment_history (
+    id TEXT PRIMARY KEY DEFAULT 'assign-' || substring(gen_random_uuid()::text from 1 for 8),
+    lead_id TEXT REFERENCES customers(id) ON DELETE CASCADE NOT NULL,
+    previous_owner TEXT DEFAULT 'Unassigned' NOT NULL,
+    assigned_owner TEXT NOT NULL,
+    strategy_used TEXT NOT NULL, -- 'round_robin' | 'project_based' | 'source_based' | 'manual' | 'capacity_based' | 'sla_reassignment'
+    reason TEXT NOT NULL,
+    assigned_by TEXT DEFAULT 'System' NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lead_assignment_history_lead ON lead_assignment_history(lead_id);
+
+-- Initialize Default Lead Assignment Settings if missing
+INSERT INTO lead_assignment_settings (id, distribution_strategy)
+VALUES ('default_assignment_settings', 'round_robin')
+ON CONFLICT (id) DO NOTHING;
+
+-- ALTER STATEMENTS FOR PROJECT COVER IMAGE AND DETAILED PARAMETERS
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'New Launch' NOT NULL;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS property_type TEXT DEFAULT 'Apartment' NOT NULL;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS possession_timeline TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_size TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS rera_number TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS cover_image_url TEXT;
+
+-- Negotiation Details Table
+CREATE TABLE IF NOT EXISTS negotiation_details (
+    id TEXT PRIMARY KEY DEFAULT 'neg-' || substring(gen_random_uuid()::text from 1 for 8),
+    opportunity_id TEXT REFERENCES opportunities(id) ON DELETE CASCADE UNIQUE NOT NULL,
+    original_price NUMERIC DEFAULT 0 NOT NULL,
+    current_offer NUMERIC DEFAULT 0 NOT NULL,
+    expected_closing NUMERIC DEFAULT 0 NOT NULL,
+    min_approved NUMERIC DEFAULT 0 NOT NULL,
+    status TEXT DEFAULT 'started' NOT NULL, -- 'started', 'reviewing', 'waiting_approval', 'counter_sent', 'agreed', 'ready_booking', 'failed'
+    outcome TEXT,
+    discounts JSONB DEFAULT '[]'::jsonb NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Negotiation Timeline Table
+CREATE TABLE IF NOT EXISTS negotiation_timeline (
+    id TEXT PRIMARY KEY DEFAULT 'negtl-' || substring(gen_random_uuid()::text from 1 for 8),
+    opportunity_id TEXT REFERENCES opportunities(id) ON DELETE CASCADE NOT NULL,
+    executive TEXT NOT NULL,
+    action_taken TEXT NOT NULL,
+    offer_amount NUMERIC DEFAULT 0 NOT NULL,
+    customer_response TEXT,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_negotiation_details_opportunity ON negotiation_details(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_negotiation_timeline_opportunity ON negotiation_timeline(opportunity_id);
+
+-- ============================================================
+-- BOOKINGS OPERATIONAL COLUMNS MIGRATION
+-- Adds status tracking, cancellation, and refund columns to
+-- the bookings table. All statements are idempotent.
+-- Run in Supabase SQL console after initial schema setup.
+-- ============================================================
+
+-- Booking lifecycle status
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' NOT NULL;
+
+-- Cancellation tracking
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancellation_reason TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS cancelled_by TEXT;
+
+-- Refund tracking
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_amount NUMERIC DEFAULT 0;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_status TEXT; -- 'pending' | 'processed' | 'rejected'
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_processed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_reference TEXT;
+
+-- Booking metadata
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS approved_by TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- Index for fast status-based queries
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
+CREATE INDEX IF NOT EXISTS idx_bookings_opportunity ON bookings(opportunity_id);
+
+-- ============================================================
+-- INVOICES OPERATIONAL COLUMNS MIGRATION
+-- Adds payment method, audit, and void tracking columns.
+-- ============================================================
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_method TEXT;   -- 'bank_transfer' | 'cheque' | 'cash' | 'upi'
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS void_reason TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS generated_by TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_invoices_booking ON invoices(booking_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);

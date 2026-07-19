@@ -28,17 +28,17 @@ async function getRawBody(req: any): Promise<string> {
 async function fetchWithRetry(url: string, maxAttempts = 5): Promise<any> {
   let attempt = 1;
   let delay = 1000;
-  
+
   while (attempt <= maxAttempts) {
     try {
       const response = await fetch(url);
       if (response.ok) {
         return await response.json();
       }
-      
+
       const errorText = await response.text();
       console.error(`Attempt ${attempt} failed with status ${response.status}: ${errorText}`);
-      
+
       if (response.status !== 429 && response.status < 500) {
         throw new Error(`Graph API error: ${response.status} - ${errorText}`);
       }
@@ -48,12 +48,14 @@ async function fetchWithRetry(url: string, maxAttempts = 5): Promise<any> {
       }
       console.warn(`Attempt ${attempt} error: ${err.message}. Retrying in ${delay}ms...`);
     }
-    
+
     await new Promise((resolve) => setTimeout(resolve, delay));
     attempt++;
     delay *= 2;
   }
 }
+
+const IS_DEV = process.env.NODE_ENV !== "production";
 
 export default async function handler(req: any, res: any) {
   // Fast-fail env checks on startup
@@ -63,9 +65,10 @@ export default async function handler(req: any, res: any) {
   const graphVersion = process.env.META_GRAPH_VERSION || "v23.0";
 
   if (!appSecret || !verifyToken || !accessToken) {
-    console.error("Missing required Meta environment variables on startup.");
+    // Log config error without exposing variable values
+    if (IS_DEV) console.error("Missing required Meta environment variables on startup.");
     return res.status(500).json({
-      error: "Configuration Error: Missing required environment variables on startup (META_APP_SECRET, META_VERIFY_TOKEN, META_ACCESS_TOKEN).",
+      error: "Configuration Error: Missing required environment variables.",
     });
   }
 
@@ -75,31 +78,34 @@ export default async function handler(req: any, res: any) {
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    console.log("Webhook GET received:", JSON.stringify({ mode, tokenReceived: token, tokenExpected: verifyToken, challenge }));
+    // Dev-only: log handshake details (never in production — token values are sensitive)
+    if (IS_DEV) console.log("Webhook GET received:", JSON.stringify({ mode, challenge }));
 
     if (mode === "subscribe" && token?.trim() === verifyToken?.trim()) {
-      console.log("Meta Webhook handshake verified successfully.");
+      if (IS_DEV) console.log("Meta Webhook handshake verified successfully.");
       res.setHeader("Content-Type", "text/plain");
       return res.status(200).send(challenge);
     }
 
-    console.warn(`Meta Webhook handshake FAILED. Received token: "${token}", Expected: "${verifyToken}"`);
+    // Do NOT log the received or expected token in production
+    if (IS_DEV) console.warn(`Meta Webhook handshake FAILED. Received token: "${token}"`);
     return res.status(403).send("Forbidden");
   }
 
   // 2. Incoming Event Ingestion (POST request)
   if (req.method === "POST") {
-    console.log("======================================");
-    console.log("===== META WEBHOOK HIT =====");
-    console.log("Method:", req.method);
-    console.log("Headers:", req.headers);
-    console.log("======================================");
+    // Dev-only: verbose request trace (headers contain PII metadata, body contains lead data)
+    if (IS_DEV) {
+      console.log("===== META WEBHOOK HIT =====");
+      console.log("Method:", req.method);
+      console.log("Headers:", req.headers);
+    }
 
     let rawBody = "";
     try {
       rawBody = await getRawBody(req);
-      console.log("Raw Body:");
-      console.log(rawBody);
+      // Dev-only: raw body contains lead PII (name, phone, email) — never log in production
+      if (IS_DEV) console.log("Raw Body:", rawBody);
     } catch (err: any) {
       return res.status(400).json({ error: "Failed to read request body" });
     }
@@ -110,12 +116,19 @@ export default async function handler(req: any, res: any) {
       return res.status(401).json({ error: "Missing x-hub-signature-256 header" });
     }
 
-    const signature = signatureHeader.startsWith("sha256=") ? signatureHeader.substring(7) : signatureHeader;
+    const signature = signatureHeader.startsWith("sha256=")
+      ? signatureHeader.substring(7)
+      : signatureHeader;
     const hmac = crypto.createHmac("sha256", appSecret);
     const computedSignature = hmac.update(rawBody).digest("hex");
 
     try {
-      if (!crypto.timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(computedSignature, "hex"))) {
+      if (
+        !crypto.timingSafeEqual(
+          Buffer.from(signature, "hex"),
+          Buffer.from(computedSignature, "hex"),
+        )
+      ) {
         console.warn("Invalid webhook signature received.");
         return res.status(401).json({ error: "Signature verification failed" });
       }
@@ -158,8 +171,11 @@ export default async function handler(req: any, res: any) {
       .maybeSingle();
 
     if (existingLog) {
-      console.log(`Idempotency hit: Leadgen ID ${leadgenId} has already been processed.`);
-      return res.status(200).json({ success: true, message: "Lead already processed (idempotency match)" });
+      if (IS_DEV)
+        console.log(`Idempotency hit: Leadgen ID ${leadgenId} has already been processed.`);
+      return res
+        .status(200)
+        .json({ success: true, message: "Lead already processed (idempotency match)" });
     }
 
     // Check customer table directly as safety fallback
@@ -170,8 +186,13 @@ export default async function handler(req: any, res: any) {
       .maybeSingle();
 
     if (existingCust) {
-      console.log(`Safety Idempotency hit: Customer already exists with meta_lead_id ${leadgenId}.`);
-      return res.status(200).json({ success: true, message: "Lead already processed (customer match)" });
+      if (IS_DEV)
+        console.log(
+          `Safety Idempotency hit: Customer already exists with meta_lead_id ${leadgenId}.`,
+        );
+      return res
+        .status(200)
+        .json({ success: true, message: "Lead already processed (customer match)" });
     }
 
     // Create entry log as RECEIVED
@@ -191,14 +212,14 @@ export default async function handler(req: any, res: any) {
     const logId = logEntry?.id;
 
     // C. Lead Retrieval & DB Insertion
-    // Note: We process this synchronously inside the serverless function context to guarantee 
+    // Note: We process this synchronously inside the serverless function context to guarantee
     // Vercel does not terminate execution before the Graph API query completes.
     try {
       const graphUrl = `https://graph.facebook.com/${graphVersion}/${leadgenId}?access_token=${accessToken}`;
       const leadDetails = await fetchWithRetry(graphUrl, 5);
 
       const fieldData = leadDetails.field_data || [];
-      
+
       // Parse fields using our config mapping file
       const leadMap: Record<string, string> = {};
       const customQuestions: Record<string, any> = {};
@@ -206,7 +227,7 @@ export default async function handler(req: any, res: any) {
       for (const field of fieldData) {
         const keyName = field.name;
         const val = field.values?.[0] || "";
-        
+
         // Find mapped internal CRM column
         const internalField = metaLeadFieldMapping[keyName];
         if (internalField) {
@@ -232,9 +253,10 @@ export default async function handler(req: any, res: any) {
       };
 
       // Formulate Lead Ads Source
-      const platformSource = metaMetadata.platform === "instagram" || metaMetadata.platform === "Instagram" 
-        ? "Instagram Lead Ads" 
-        : "Facebook Lead Ads";
+      const platformSource =
+        metaMetadata.platform === "instagram" || metaMetadata.platform === "Instagram"
+          ? "Instagram Lead Ads"
+          : "Facebook Lead Ads";
 
       const newLead = {
         name: leadMap.name || "Meta Lead",
@@ -275,10 +297,9 @@ export default async function handler(req: any, res: any) {
         opportunityId: result.opportunityId,
         isDuplicate: result.isDuplicate,
       });
-
     } catch (err: any) {
       console.error(`Meta lead ingestion failed for leadgen_id ${leadgenId}:`, err.message);
-      
+
       // Log failure state in webhook logs table
       await supabase
         .from("meta_webhook_logs")

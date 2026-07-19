@@ -43,3 +43,59 @@ export function StageBadge({ value }: { value: string }) {
     </span>
   );
 }
+
+const STAGE_PROGRESS_MAP: Record<string, number> = {
+  new: 10,
+  assigned: 15,
+  contact_attempted: 25,
+  connected: 35,
+  interested: 45,
+  meeting_scheduled: 50,
+  meeting_completed: 55,
+  site_visit_scheduled: 65,
+  site_visit_completed: 75,
+  negotiation: 85,
+  booking_initiated: 90,
+  payment_pending: 92,
+  payment_completed: 95,
+  converted: 100,
+  closed: 100,
+  lost: 0,
+};
+
+export function LeadProgressBar({ stage }: { stage: string }) {
+  const percent = STAGE_PROGRESS_MAP[stage] ?? 10;
+  const isLost = stage === "lost";
+  const isConverted = stage === "converted" || stage === "closed";
+
+  return (
+    <div className="w-full space-y-1">
+      <div className="flex justify-between items-center text-[11px] text-muted-foreground font-medium">
+        <span>Sales Progress</span>
+        <span
+          className={
+            isLost
+              ? "text-rose-500 font-semibold"
+              : isConverted
+                ? "text-emerald-600 font-semibold dark:text-emerald-400"
+                : "text-primary font-semibold"
+          }
+        >
+          {isLost ? "Lost (0%)" : `${percent}%`}
+        </span>
+      </div>
+      <div className="h-2 w-full bg-muted/60 rounded-full overflow-hidden">
+        <div
+          className={`h-full transition-all duration-300 rounded-full ${
+            isLost
+              ? "bg-rose-500"
+              : isConverted
+                ? "bg-emerald-500"
+                : "bg-gradient-to-r from-blue-500 to-indigo-600"
+          }`}
+          style={{ width: `${isLost ? 100 : percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}

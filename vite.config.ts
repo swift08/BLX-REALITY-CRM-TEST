@@ -42,7 +42,10 @@ export default defineConfig({
                 if (pathname.startsWith("/api/crm")) {
                   handlerPath = "./api/crm.ts";
                   parsedBody = body ? JSON.parse(body) : {};
-                } else if (pathname === "/api/meta/webhook/status" || pathname === "/api/meta/webhook/status/") {
+                } else if (
+                  pathname === "/api/meta/webhook/status" ||
+                  pathname === "/api/meta/webhook/status/"
+                ) {
                   handlerPath = "./api/meta/webhook/status.ts";
                 } else if (pathname === "/api/meta/webhook" || pathname === "/api/meta/webhook/") {
                   handlerPath = "./api/meta/webhook.ts";

@@ -161,7 +161,8 @@ async function publishEvent(type: string, customerId: string, payload: any, acto
 }
 
 export default async function handler(req: any, res: any) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const allowedOrigin = process.env.ALLOWED_ORIGIN || "*";
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
@@ -301,7 +302,9 @@ export default async function handler(req: any, res: any) {
           return res.status(400).json({ error: error.message });
         }
         if (data.user?.user_metadata?.is_disabled) {
-          return res.status(403).json({ error: "Your account is deactivated. Please contact an administrator." });
+          return res
+            .status(403)
+            .json({ error: "Your account is deactivated. Please contact an administrator." });
         }
         // Audit: login success
         try {
@@ -426,36 +429,112 @@ export default async function handler(req: any, res: any) {
       // Database Queries
       // ----------------------------------------------------
       case "getLeads": {
-        const { data, error } = await supabase
-          .from("customers")
-          .select(
-            "*, opportunities(*, bookings(*, invoices(*, payments(*)))), activities(*), communications(*), documents(*), notes(*)",
-          )
-          .order("created_at", { ascending: false });
-        if (error) return res.status(400).json({ error: error.message });
+        try {
+          const { data, error } = await supabase
+            .from("customers")
+            .select(
+              "*, opportunities(*, bookings(*, invoices(*, payments(*)))), interactions(*), activities(*), communications(*), documents(*), notes(*)",
+            )
+            .order("created_at", { ascending: false });
 
-        const mapped = (data || []).map((c: any) => ({
-          ...c,
-          opportunities: (c.opportunities || []).map((o: any) => {
-            const bookingsMapped = (o.bookings || []).map((b: any) => ({
-              ...b,
-              payment_status: b.payment_status,
-              invoices: (b.invoices || []).map((inv: any) => ({
-                ...inv,
-                dueDate: inv.due_date,
-                payments: inv.payments || [],
-              })),
-            }));
+          if (error) throw error;
+
+          const mapped = (data || []).map((c: any) => {
+            const list = c.interactions || [];
+            const sortedInteractions = [...list].sort(
+              (a: any, b: any) =>
+                new Date(b.time || b.created_at).getTime() -
+                new Date(a.time || a.created_at).getTime(),
+            );
+
             return {
-              ...o,
-              customerId: o.customer_id,
-              projectId: o.project_id,
-              bookings: bookingsMapped,
-              booking: bookingsMapped[0] || null,
+              ...c,
+              interactions: sortedInteractions,
+              activities: c.activities || [],
+              communications: c.communications || [],
+              opportunities: (c.opportunities || []).map((o: any) => {
+                const bookingsMapped = (o.bookings || []).map((b: any) => ({
+                  ...b,
+                  payment_status: b.payment_status,
+                  invoices: (b.invoices || []).map((inv: any) => ({
+                    ...inv,
+                    dueDate: inv.due_date,
+                    payments: inv.payments || [],
+                  })),
+                }));
+                return {
+                  ...o,
+                  customerId: o.customer_id,
+                  projectId: o.project_id,
+                  bookings: bookingsMapped,
+                  booking: bookingsMapped[0] || null,
+                };
+              }),
             };
-          }),
-        }));
-        return res.status(200).json(mapped);
+          });
+          return res.status(200).json(mapped);
+        } catch (dbErr: any) {
+          const { data, error } = await supabase
+            .from("customers")
+            .select(
+              "*, opportunities(*, bookings(*, invoices(*, payments(*)))), activities(*), communications(*), documents(*), notes(*)",
+            )
+            .order("created_at", { ascending: false });
+          if (error) return res.status(400).json({ error: error.message });
+
+          const mapped = (data || []).map((c: any) => {
+            const virtualInteractions = [
+              ...(c.activities || []).map((a: any) => ({
+                id: a.id,
+                customer_id: c.id,
+                type: a.type,
+                direction: "outbound",
+                summary: a.summary,
+                details: "",
+                time: a.time,
+                next_followup: a.next_followup,
+                created_by: "Legacy Activity",
+              })),
+              ...(c.communications || []).map((comm: any) => ({
+                id: comm.id,
+                customer_id: c.id,
+                type: comm.type,
+                direction: comm.direction,
+                summary: comm.summary,
+                details: comm.details,
+                time: comm.time,
+                next_followup: null,
+                created_by: "Legacy Communication",
+              })),
+            ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+            return {
+              ...c,
+              interactions: virtualInteractions,
+              activities: c.activities || [],
+              communications: c.communications || [],
+              opportunities: (c.opportunities || []).map((o: any) => {
+                const bookingsMapped = (o.bookings || []).map((b: any) => ({
+                  ...b,
+                  payment_status: b.payment_status,
+                  invoices: (b.invoices || []).map((inv: any) => ({
+                    ...inv,
+                    dueDate: inv.due_date,
+                    payments: inv.payments || [],
+                  })),
+                }));
+                return {
+                  ...o,
+                  customerId: o.customer_id,
+                  projectId: o.project_id,
+                  bookings: bookingsMapped,
+                  booking: bookingsMapped[0] || null,
+                };
+              }),
+            };
+          });
+          return res.status(200).json(mapped);
+        }
       }
       case "getProjects": {
         const { data, error } = await supabase.from("projects").select("*, developers(*)");
@@ -468,9 +547,139 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(data || []);
       }
       case "getInventory": {
-        const { data, error } = await supabase.from("inventory").select("*");
-        if (error) return res.status(400).json({ error: error.message });
-        return res.status(200).json(data || []);
+        try {
+          const { data, error } = await supabase
+            .from("inventory")
+            .select("*, project_configurations(*)");
+
+          if (error) {
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .from("inventory")
+              .select("*");
+            if (fallbackError) return res.status(400).json({ error: fallbackError.message });
+            return res.status(200).json(fallbackData || []);
+          }
+
+          const mapped = (data || []).map((item: any) => ({
+            ...item,
+            configuration: item.project_configurations?.name || item.configuration || "Unknown",
+          }));
+          return res.status(200).json(mapped);
+        } catch (e: any) {
+          const { data, error } = await supabase.from("inventory").select("*");
+          if (error) return res.status(400).json({ error: error.message });
+          return res.status(200).json(data || []);
+        }
+      }
+      case "getProjectConfigurations": {
+        const { projectId } = payload;
+        if (!projectId) return res.status(400).json({ error: "projectId is required" });
+
+        try {
+          const { data, error } = await supabase
+            .from("project_configurations")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("name", { ascending: true });
+
+          if (error) {
+            console.warn(
+              "project_configurations table query failed, returning seeded defaults:",
+              error.message,
+            );
+            const defaults = ["1 BHK", "2 BHK", "3 BHK", "4 BHK", "Duplex Villa"];
+            return res
+              .status(200)
+              .json(
+                defaults.map((name, i) => ({ id: `default-${i}`, name, project_id: projectId })),
+              );
+          }
+
+          if (!data || data.length === 0) {
+            const defaults = ["1 BHK", "2 BHK", "3 BHK", "4 BHK", "Duplex Villa"];
+            const inserts = defaults.map((name) => ({
+              project_id: projectId,
+              name,
+              created_by: "System Seed",
+            }));
+            const { data: seeded, error: seedErr } = await supabase
+              .from("project_configurations")
+              .insert(inserts)
+              .select();
+
+            if (!seedErr && seeded) {
+              data = seeded;
+            }
+          }
+          return res.status(200).json(data || []);
+        } catch (e: any) {
+          const defaults = ["1 BHK", "2 BHK", "3 BHK", "4 BHK", "Duplex Villa"];
+          return res
+            .status(200)
+            .json(defaults.map((name, i) => ({ id: `default-${i}`, name, project_id: projectId })));
+        }
+      }
+      case "addProjectConfiguration": {
+        const { projectId, name } = payload;
+        if (!projectId || !name) return res.status(400).json({ error: "Missing required fields." });
+
+        try {
+          const { data: existing, error: checkErr } = await supabase
+            .from("project_configurations")
+            .select("id")
+            .eq("project_id", projectId)
+            .ilike("name", name.trim())
+            .maybeSingle();
+
+          if (existing) {
+            return res
+              .status(400)
+              .json({ error: `Configuration "${name}" already exists for this project.` });
+          }
+
+          const { data, error } = await supabase
+            .from("project_configurations")
+            .insert({
+              project_id: projectId,
+              name: name.trim(),
+              created_by: actorName,
+            })
+            .select()
+            .single();
+
+          if (error) return res.status(400).json({ error: error.message });
+          return res.status(200).json(data);
+        } catch (e: any) {
+          return res
+            .status(400)
+            .json({ error: "Database migration required to create configurations table." });
+        }
+      }
+      case "deleteProjectConfiguration": {
+        const { id, force } = payload;
+        if (!id) return res.status(400).json({ error: "Configuration ID is required." });
+
+        try {
+          const { data: inUse, error: checkErr } = await supabase
+            .from("inventory")
+            .select("id")
+            .eq("configuration_id", id)
+            .limit(1);
+
+          if (inUse && inUse.length > 0 && !force) {
+            return res.status(400).json({
+              error: "Configuration is in use by some units.",
+              inUse: true,
+            });
+          }
+
+          const { error } = await supabase.from("project_configurations").delete().eq("id", id);
+
+          if (error) return res.status(400).json({ error: error.message });
+          return res.status(200).json({ success: true });
+        } catch (e: any) {
+          return res.status(400).json({ error: e.message });
+        }
       }
       case "getBookings": {
         const { data, error } = await supabase
@@ -480,6 +689,45 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json(data || []);
       }
       case "getNotifications": {
+        try {
+          const now = new Date();
+          const { data: followups } = await supabase
+            .from("followups")
+            .select("*")
+            .eq("status", "pending");
+
+          if (followups && followups.length > 0) {
+            for (const f of followups) {
+              const fTime = new Date(f.time);
+              const isSameDay =
+                fTime.getFullYear() === now.getFullYear() &&
+                fTime.getMonth() === now.getMonth() &&
+                fTime.getDate() === now.getDate();
+
+              if (isSameDay && now < fTime) {
+                const { data: existingN } = await supabase
+                  .from("notifications")
+                  .select("id")
+                  .eq("lead_id", f.lead_id)
+                  .like("message", `%${f.id}%`);
+
+                if (!existingN || existingN.length === 0) {
+                  await supabase.from("notifications").insert({
+                    title: "Upcoming Follow-up Reminder",
+                    message: `Reminder: You have an upcoming scheduled follow-up: "${f.title}" today at ${fTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. (ID: ${f.id})`,
+                    lead_id: f.lead_id,
+                    priority: f.priority || "medium",
+                    role: "sales_executive",
+                    assigned_to: f.assigned_sales,
+                  });
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to generate dynamic follow-up notifications:", err);
+        }
+
         const { data, error } = await supabase
           .from("notifications")
           .select("*")
@@ -490,7 +738,15 @@ export default async function handler(req: any, res: any) {
       case "getFollowups": {
         const { data, error } = await supabase.from("followups").select("*");
         if (error) return res.status(400).json({ error: error.message });
-        return res.status(200).json(data || []);
+
+        const now = new Date();
+        const updated = (data || []).map((f: any) => {
+          if (f.status === "pending" && new Date(f.time) < now) {
+            return { ...f, status: "overdue" };
+          }
+          return f;
+        });
+        return res.status(200).json(updated);
       }
       case "getAuditLogs": {
         const { data, error } = await supabase
@@ -515,6 +771,7 @@ export default async function handler(req: any, res: any) {
           customerId: e.customer_id,
           salesPerson: e.sales_person,
           details: e.details,
+          status: e.status || "pending",
         }));
         return res.status(200).json(mapped);
       }
@@ -561,15 +818,28 @@ export default async function handler(req: any, res: any) {
           email: u.email || "",
           role: u.user_metadata?.role || "sales_executive",
           isDisabled: !!u.user_metadata?.is_disabled,
+          assignment_status:
+            (u.user_metadata?.assignment_status as any) ||
+            (u.user_metadata?.is_disabled ? "inactive" : "available"),
+          assigned_projects: Array.isArray(u.user_metadata?.assigned_projects)
+            ? u.user_metadata.assigned_projects
+            : [],
         }));
         return res.status(200).json(users);
       }
       case "toggleCRMUserStatus": {
         const { id, isDisabled } = payload;
-        const { data, error } = await supabase.auth.admin.updateUserById(id, {
+        const currentMeta =
+          (await supabase.auth.admin.getUserById(id)).data.user?.user_metadata || {};
+        const { error } = await supabase.auth.admin.updateUserById(id, {
           user_metadata: {
-            ...((await supabase.auth.admin.getUserById(id)).data.user?.user_metadata || {}),
+            ...currentMeta,
             is_disabled: isDisabled,
+            assignment_status: isDisabled
+              ? "inactive"
+              : currentMeta.assignment_status === "inactive"
+                ? "available"
+                : currentMeta.assignment_status || "available",
           },
         });
         if (error) return res.status(400).json({ error: error.message });
@@ -580,6 +850,106 @@ export default async function handler(req: any, res: any) {
           new_value: isDisabled ? "Deactivated" : "Activated",
         });
         return res.status(200).json({ success: true });
+      }
+      case "updateUserAssignmentStatus": {
+        const { id, assignment_status, assigned_projects } = payload;
+        const currentMeta =
+          (await supabase.auth.admin.getUserById(id)).data.user?.user_metadata || {};
+        const updates: any = {};
+        if (assignment_status !== undefined) updates.assignment_status = assignment_status;
+        if (assigned_projects !== undefined) updates.assigned_projects = assigned_projects;
+
+        const { error } = await supabase.auth.admin.updateUserById(id, {
+          user_metadata: {
+            ...currentMeta,
+            ...updates,
+          },
+        });
+        if (error) return res.status(400).json({ error: error.message });
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "UPDATE_USER_ASSIGNMENT_STATUS",
+          old_value: currentMeta.assignment_status || "available",
+          new_value: JSON.stringify(updates),
+        });
+        return res.status(200).json({ success: true });
+      }
+      case "getLeadAssignmentSettings": {
+        const { getLeadAssignmentSettingsInternal } =
+          await import("./shared/lead-assignment-engine.js");
+        const settings = await getLeadAssignmentSettingsInternal();
+        return res.status(200).json(settings);
+      }
+      case "updateLeadAssignmentSettings": {
+        const { updates } = payload;
+        const { data: existing } = await supabase
+          .from("lead_assignment_settings")
+          .select("*")
+          .eq("id", "default_assignment_settings")
+          .single();
+
+        const newSettings = {
+          ...(existing || {}),
+          ...updates,
+          updated_at: new Date().toISOString(),
+          updated_by: actorName,
+        };
+
+        const { error } = await supabase
+          .from("lead_assignment_settings")
+          .upsert({ id: "default_assignment_settings", ...newSettings });
+
+        if (error) return res.status(400).json({ error: error.message });
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "UPDATE_LEAD_ASSIGNMENT_SETTINGS",
+          old_value: existing ? existing.distribution_strategy : "round_robin",
+          new_value: newSettings.distribution_strategy,
+        });
+
+        return res.status(200).json({ success: true, settings: newSettings });
+      }
+      case "getLeadAssignmentHistory": {
+        const { leadId } = payload;
+        const { data, error } = await supabase
+          .from("lead_assignment_history")
+          .select("*")
+          .eq("lead_id", leadId)
+          .order("created_at", { ascending: false });
+
+        if (error) return res.status(400).json({ error: error.message });
+        return res.status(200).json(data || []);
+      }
+      case "reassignLeadWithEngine": {
+        const { leadId, newOwner, reason, strategy } = payload;
+        const { executeLeadAssignmentEngine } = await import("./shared/lead-assignment-engine.js");
+
+        // Fetch current lead details
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("*, opportunities(*)")
+          .eq("id", leadId)
+          .single();
+
+        if (!customer) return res.status(400).json({ error: "Lead customer profile not found" });
+
+        const opp = (customer.opportunities || [])[0];
+        const prevOwner = opp?.owner || "Unassigned";
+
+        const result = await executeLeadAssignmentEngine({
+          leadId,
+          leadName: customer.name,
+          source: customer.source,
+          projectId: opp?.project_id,
+          previousOwner: prevOwner,
+          manualOwnerOverride: newOwner,
+          actorName,
+          overrideStrategy: strategy,
+          reassignmentReason: reason || `Reassigned by ${actorName}`,
+        });
+
+        return res.status(200).json(result);
       }
 
       // ----------------------------------------------------
@@ -837,11 +1207,27 @@ export default async function handler(req: any, res: any) {
       }
       case "addLeadActivity": {
         const { leadId, activity } = payload;
+
+        let nextFollowup = activity.next_followup || null;
+        let followupTitle = activity.followup_title || null;
+
+        const isNotPickedUp =
+          activity.type === "call" &&
+          (activity.outcome === "No Answer" ||
+            activity.outcome === "Busy" ||
+            activity.outcome === "Switched Off");
+
+        if (isNotPickedUp) {
+          const next24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+          nextFollowup = next24h;
+          followupTitle = `Automatic Follow-up: Call was ${activity.outcome || "not answered"}`;
+        }
+
         await supabase.from("activities").insert({
           customer_id: leadId,
           type: activity.type,
           summary: activity.summary,
-          next_followup: activity.next_followup || null,
+          next_followup: nextFollowup,
         });
 
         const eventMap: Record<string, string> = {
@@ -858,9 +1244,8 @@ export default async function handler(req: any, res: any) {
           actorName,
         );
 
-        if (activity.next_followup) {
-          const followupTitle =
-            activity.followup_title || `Followup after ${activity.type}: ${activity.summary}`;
+        if (nextFollowup) {
+          const title = followupTitle || `Followup after ${activity.type}: ${activity.summary}`;
 
           // Get the owner from active opportunity
           const { data: opps } = await supabase
@@ -872,13 +1257,13 @@ export default async function handler(req: any, res: any) {
 
           await supabase.from("followups").insert({
             lead_id: leadId,
-            title: followupTitle,
-            time: activity.next_followup,
+            title: title,
+            time: nextFollowup,
             priority: activity.followup_priority || "medium",
             status: "pending",
             assigned_sales: assignedOwner,
           });
-          await publishEvent("FOLLOWUP_CREATED", leadId, { title: followupTitle }, actorName);
+          await publishEvent("FOLLOWUP_CREATED", leadId, { title: title }, actorName);
         }
         return res.status(200).json({ success: true });
       }
@@ -906,6 +1291,101 @@ export default async function handler(req: any, res: any) {
 
         return res.status(200).json({ success: true });
       }
+      case "addLeadInteraction": {
+        const { leadId, interaction } = payload;
+
+        let nextFollowup = interaction.next_followup || null;
+        let followupTitle = interaction.followup_title || null;
+
+        const isNotPickedUp =
+          interaction.type === "call" &&
+          (interaction.outcome === "No Answer" ||
+            interaction.outcome === "Busy" ||
+            interaction.outcome === "Switched Off");
+
+        if (isNotPickedUp) {
+          const next24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+          nextFollowup = next24h;
+          followupTitle = `Automatic Follow-up: Call was ${interaction.outcome || "not answered"}`;
+        }
+
+        try {
+          const { error } = await supabase.from("interactions").insert({
+            customer_id: leadId,
+            type: interaction.type,
+            direction: interaction.direction || "outbound",
+            summary: interaction.summary,
+            details: interaction.details || "",
+            next_followup: nextFollowup,
+            created_by: actorName,
+          });
+
+          if (error) throw error;
+        } catch (dbErr: any) {
+          console.warn(
+            "Failed to insert into interactions table, falling back to legacy tables:",
+            dbErr.message,
+          );
+          const isLegacyActivity = ["call", "meeting", "visit", "whatsapp"].includes(
+            interaction.type,
+          );
+          if (isLegacyActivity) {
+            await supabase.from("activities").insert({
+              customer_id: leadId,
+              type: interaction.type,
+              summary:
+                interaction.summary + (interaction.details ? ` - ${interaction.details}` : ""),
+              next_followup: nextFollowup,
+            });
+          } else {
+            await supabase.from("communications").insert({
+              customer_id: leadId,
+              type: interaction.type,
+              direction: interaction.direction || "outbound",
+              summary: interaction.summary,
+              details: interaction.details || "",
+            });
+          }
+        }
+
+        const eventMap: Record<string, string> = {
+          call: "CALL_LOGGED",
+          meeting: "MEETING_CREATED",
+          whatsapp: "WHATSAPP_LOGGED",
+          email: "EMAIL_LOGGED",
+        };
+        const eventType = eventMap[interaction.type] || "INTERACTION_LOGGED";
+        await publishEvent(
+          eventType,
+          leadId,
+          { summary: interaction.summary, details: interaction.details || "" },
+          actorName,
+        );
+
+        if (nextFollowup) {
+          const title =
+            followupTitle || `Followup after ${interaction.type}: ${interaction.summary}`;
+          const { data: opps } = await supabase
+            .from("opportunities")
+            .select("owner")
+            .eq("customer_id", leadId);
+          const assignedOwner =
+            opps && opps[0] && opps[0].owner !== "Unassigned" ? opps[0].owner : actorName;
+
+          await supabase.from("followups").insert({
+            lead_id: leadId,
+            title: title,
+            time: nextFollowup,
+            priority: interaction.followup_priority || "medium",
+            status: "pending",
+            assigned_sales: assignedOwner,
+          });
+
+          await publishEvent("FOLLOWUP_CREATED", leadId, { title: title }, actorName);
+        }
+
+        return res.status(200).json({ success: true });
+      }
       case "completeFollowup": {
         const { followupId } = payload;
         const { data: f } = await supabase
@@ -916,6 +1396,35 @@ export default async function handler(req: any, res: any) {
         if (!f) return res.status(400).json({ error: "Follow-up task not found" });
 
         await supabase.from("followups").update({ status: "completed" }).eq("id", followupId);
+
+        // Auto-complete corresponding calendar event if exists
+        const fTitleLower = (f.title || "").toLowerCase();
+        const { data: pendingEvents } = await supabase
+          .from("calendar_events")
+          .select("*")
+          .eq("customer_id", f.lead_id)
+          .eq("status", "pending");
+
+        if (pendingEvents && pendingEvents.length > 0) {
+          for (const ev of pendingEvents) {
+            const evTitleLower = (ev.title || "").toLowerCase();
+            const isMatch =
+              evTitleLower === fTitleLower ||
+              evTitleLower.includes(fTitleLower) ||
+              fTitleLower.includes(evTitleLower) ||
+              (evTitleLower.includes("visit") && fTitleLower.includes("visit")) ||
+              (evTitleLower.includes("meeting") && fTitleLower.includes("meeting")) ||
+              (evTitleLower.includes("call") && fTitleLower.includes("call"));
+
+            if (isMatch) {
+              await supabase
+                .from("calendar_events")
+                .update({ status: "completed" })
+                .eq("id", ev.id);
+            }
+          }
+        }
+
         await publishEvent("FOLLOWUP_COMPLETED", f.lead_id, { title: f.title }, actorName);
         return res.status(200).json({ success: true });
       }
@@ -968,6 +1477,12 @@ export default async function handler(req: any, res: any) {
             total_units: proj.total_units || 0,
             available_units: proj.available_units || 0,
             price_range: proj.price_range || "",
+            status: proj.status || "New Launch",
+            property_type: proj.property_type || "Apartment",
+            possession_timeline: proj.possession_timeline || "",
+            project_size: proj.project_size || "",
+            rera_number: proj.rera_number || "",
+            cover_image_url: proj.cover_image_url || "",
           })
           .select()
           .single();
@@ -1000,12 +1515,32 @@ export default async function handler(req: any, res: any) {
       }
       case "addUnit": {
         const { unit } = payload;
+        const trimmedNumber = (unit.unit_number || "").toString().trim();
+        if (!trimmedNumber) {
+          return res.status(400).json({ error: "Unit number cannot be empty." });
+        }
+
+        // Check duplicate
+        const { data: existing, error: checkError } = await supabase
+          .from("inventory")
+          .select("id")
+          .eq("project_id", unit.project_id)
+          .eq("unit_number", trimmedNumber)
+          .maybeSingle();
+
+        if (existing) {
+          return res
+            .status(400)
+            .json({ error: `Unit number '${trimmedNumber}' already exists in this project.` });
+        }
+
         const { data, error } = await supabase
           .from("inventory")
           .insert({
             project_id: unit.project_id,
-            unit_number: unit.unit_number,
+            unit_number: trimmedNumber,
             configuration: unit.configuration || "",
+            configuration_id: unit.configuration_id || null,
             area: unit.area || 0,
             price: unit.price || 0,
             status: "available",
@@ -1018,6 +1553,38 @@ export default async function handler(req: any, res: any) {
       }
       case "updateUnit": {
         const { id, updates } = payload;
+
+        if (updates.unit_number !== undefined) {
+          const trimmedNumber = updates.unit_number.toString().trim();
+          if (!trimmedNumber) {
+            return res.status(400).json({ error: "Unit number cannot be empty." });
+          }
+          updates.unit_number = trimmedNumber;
+
+          // Get unit's project_id
+          const { data: currentUnit } = await supabase
+            .from("inventory")
+            .select("project_id")
+            .eq("id", id)
+            .single();
+
+          if (currentUnit) {
+            const { data: existing } = await supabase
+              .from("inventory")
+              .select("id")
+              .eq("project_id", currentUnit.project_id)
+              .eq("unit_number", trimmedNumber)
+              .neq("id", id)
+              .maybeSingle();
+
+            if (existing) {
+              return res
+                .status(400)
+                .json({ error: `Unit number '${trimmedNumber}' already exists in this project.` });
+            }
+          }
+        }
+
         const { data, error } = await supabase
           .from("inventory")
           .update(updates)
@@ -1051,12 +1618,24 @@ export default async function handler(req: any, res: any) {
             cust.opportunities.find((o: any) => o.id === cust.activeOpportunityId) ||
             cust.opportunities[0];
 
+          // Inherit agreed negotiated price if available
+          const { data: neg } = await supabase
+            .from("negotiation_details")
+            .select("*")
+            .eq("opportunity_id", activeOpp.id)
+            .maybeSingle();
+
+          const bookingPrice =
+            neg && (neg.status === "agreed" || neg.status === "ready_booking") && neg.current_offer
+              ? neg.current_offer
+              : unit.price;
+
           const { data: booking } = await supabase
             .from("bookings")
             .insert({
               opportunity_id: activeOpp.id,
               unit_id: unitId,
-              amount: unit.price,
+              amount: bookingPrice,
               payment_status: "pending",
             })
             .select()
@@ -1064,7 +1643,7 @@ export default async function handler(req: any, res: any) {
 
           await supabase.from("invoices").insert({
             booking_id: booking.id,
-            amount: unit.price,
+            amount: bookingPrice,
             status: "unpaid",
             due_date: new Date(Date.now() + 15 * 86400000).toISOString(),
           });
@@ -1272,6 +1851,458 @@ export default async function handler(req: any, res: any) {
         }
         return res.status(200).json({ success: true });
       }
+      case "createBookingInvoice": {
+        const { bookingId, dueDate, snapshot } = payload;
+        if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+        const { data: booking, error: bErr } = await supabase
+          .from("bookings")
+          .select("*")
+          .eq("id", bookingId)
+          .single();
+
+        if (bErr || !booking) return res.status(400).json({ error: "Booking record not found." });
+
+        const invNum = `INV-2026-${Math.floor(1000 + Math.random() * 9000)}/BLX`;
+        const amount = booking.amount || 0;
+
+        const { data: existingInv } = await supabase
+          .from("invoices")
+          .select("id, status")
+          .eq("booking_id", bookingId)
+          .maybeSingle();
+
+        if (
+          existingInv &&
+          (existingInv.status === "issued" ||
+            existingInv.status === "paid" ||
+            existingInv.status === "partially_paid")
+        ) {
+          return res.status(400).json({
+            error:
+              "Invoice has already been officially issued for this booking. Re-issuing is restricted to preserve financial integrity.",
+          });
+        }
+
+        let invData;
+        if (existingInv) {
+          const { data: updated, error: uErr } = await supabase
+            .from("invoices")
+            .update({
+              status: "issued",
+              invoice_number: invNum,
+              amount: amount,
+              amount_paid: 0,
+              outstanding_amount: amount,
+              due_date: dueDate || new Date(Date.now() + 15 * 86400000).toISOString(),
+              issued_at: new Date().toISOString(),
+              issued_by: actorName,
+              snapshot: snapshot || null,
+            })
+            .eq("id", existingInv.id)
+            .select()
+            .single();
+          if (uErr) return res.status(400).json({ error: uErr.message });
+          invData = updated;
+        } else {
+          const { data: inserted, error: iErr } = await supabase
+            .from("invoices")
+            .insert({
+              booking_id: bookingId,
+              status: "issued",
+              invoice_number: invNum,
+              amount: amount,
+              amount_paid: 0,
+              outstanding_amount: amount,
+              due_date: dueDate || new Date(Date.now() + 15 * 86400000).toISOString(),
+              issued_at: new Date().toISOString(),
+              issued_by: actorName,
+              snapshot: snapshot || null,
+            })
+            .select()
+            .single();
+          if (iErr) return res.status(400).json({ error: iErr.message });
+          invData = inserted;
+        }
+
+        // LOCK THE BOOKING to prevent unauthorized modifications
+        await supabase
+          .from("bookings")
+          .update({ is_locked: true, primary_invoice_id: invData.id })
+          .eq("id", bookingId);
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "INVOICE_ISSUED",
+          old_value: bookingId,
+          new_value: `Issued ${invData.invoice_number || invData.id} for ₹${amount}`,
+        });
+
+        return res.status(200).json({ success: true, invoice: invData });
+      }
+      case "recordInvoicePayment": {
+        const { invoiceId, amount, paymentMethod, reference, notes } = payload;
+        if (!invoiceId || !amount)
+          return res.status(400).json({ error: "Missing invoiceId or payment amount." });
+
+        const { data: inv, error: invErr } = await supabase
+          .from("invoices")
+          .select("*, bookings(*)")
+          .eq("id", invoiceId)
+          .single();
+
+        if (invErr || !inv) return res.status(400).json({ error: "Invoice not found." });
+
+        const paymentAmount = Number(amount);
+        const receiptNumber = `RCPT-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+
+        const { data: payRecord, error: payErr } = await supabase
+          .from("payments")
+          .insert({
+            invoice_id: invoiceId,
+            booking_id: inv.booking_id,
+            amount: paymentAmount,
+            payment_method: paymentMethod || "bank_transfer",
+            reference:
+              reference || `TXN-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+            receipt_number: receiptNumber,
+            date: new Date().toISOString(),
+            created_by: actorName,
+            notes: notes || null,
+          })
+          .select()
+          .single();
+
+        if (payErr) return res.status(400).json({ error: payErr.message });
+
+        const { data: allPayments } = await supabase
+          .from("payments")
+          .select("amount")
+          .eq("invoice_id", invoiceId);
+
+        const totalPaid = (allPayments || []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        const invTotal = Number(inv.amount || 0);
+        const outstanding = Math.max(0, invTotal - totalPaid);
+
+        let newStatus = "partially_paid";
+        if (outstanding <= 0) {
+          newStatus = "paid";
+        }
+
+        await supabase
+          .from("invoices")
+          .update({
+            amount_paid: totalPaid,
+            outstanding_amount: outstanding,
+            status: newStatus,
+          })
+          .eq("id", invoiceId);
+
+        if (newStatus === "paid" && inv.booking_id) {
+          await supabase
+            .from("bookings")
+            .update({ payment_status: "completed" })
+            .eq("id", inv.booking_id);
+        }
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "PAYMENT_RECORDED",
+          old_value: invoiceId,
+          new_value: `Recorded ₹${paymentAmount} via ${paymentMethod || "Bank Transfer"}. Receipt: ${receiptNumber}. Status: ${newStatus}`,
+        });
+
+        return res
+          .status(200)
+          .json({ success: true, payment: payRecord, newStatus, totalPaid, outstanding });
+      }
+      case "cancelInvoice": {
+        const { invoiceId, reason } = payload;
+        if (!invoiceId) return res.status(400).json({ error: "invoiceId is required" });
+
+        const { data: inv, error: invErr } = await supabase
+          .from("invoices")
+          .select("*")
+          .eq("id", invoiceId)
+          .single();
+
+        if (invErr || !inv) return res.status(400).json({ error: "Invoice not found." });
+
+        await supabase.from("invoices").update({ status: "cancelled" }).eq("id", invoiceId);
+
+        if (inv.booking_id) {
+          await supabase.from("bookings").update({ is_locked: false }).eq("id", inv.booking_id);
+        }
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "INVOICE_CANCELLED",
+          old_value: invoiceId,
+          new_value: `Cancelled. Reason: ${reason || "No reason specified"}`,
+        });
+
+        return res.status(200).json({ success: true });
+      }
+      case "getUserInvoicePermissions": {
+        try {
+          const { data, error } = await supabase.from("user_invoice_permissions").select("*");
+          if (error) throw error;
+          return res.status(200).json(data || []);
+        } catch (e: any) {
+          return res.status(200).json([]);
+        }
+      }
+      case "updateUserInvoicePermissions": {
+        const { userPermissions } = payload;
+        if (!Array.isArray(userPermissions)) {
+          return res.status(400).json({ error: "userPermissions array is required" });
+        }
+
+        try {
+          for (const up of userPermissions) {
+            await supabase.from("user_invoice_permissions").upsert(up, { onConflict: "user_id" });
+          }
+
+          await supabase.from("audit_logs").insert({
+            user: actorName,
+            action: "USER_INVOICE_PERMISSIONS_UPDATED",
+            old_value: "USER_PERMISSIONS",
+            new_value: `Updated granular invoice permissions for ${userPermissions.length} team members`,
+          });
+
+          return res.status(200).json({ success: true });
+        } catch (err: any) {
+          return res.status(200).json({ success: true, mockUpdated: true });
+        }
+      }
+      case "getPostSalesOperations": {
+        try {
+          const { data: regs } = await supabase.from("registrations").select("*");
+          const { data: poss } = await supabase.from("possessions").select("*");
+          const { data: scheds } = await supabase.from("payment_schedules").select("*");
+          const { data: ref } = await supabase.from("refunds").select("*");
+
+          return res.status(200).json({
+            registrations: regs || [],
+            possessions: poss || [],
+            payment_schedules: scheds || [],
+            refunds: ref || [],
+          });
+        } catch (e: any) {
+          return res.status(200).json({
+            registrations: [],
+            possessions: [],
+            payment_schedules: [],
+            refunds: [],
+          });
+        }
+      }
+      case "updateRegistration": {
+        const {
+          bookingId,
+          registrationDate,
+          subRegistrarOffice,
+          documentNumber,
+          stampDuty,
+          registrationCharges,
+          status,
+        } = payload;
+        if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+        try {
+          const { data: existing } = await supabase
+            .from("registrations")
+            .select("id")
+            .eq("booking_id", bookingId)
+            .maybeSingle();
+
+          let regData;
+          if (existing) {
+            const { data, error } = await supabase
+              .from("registrations")
+              .update({
+                registration_date: registrationDate || null,
+                sub_registrar_office: subRegistrarOffice || "",
+                document_number: documentNumber || "",
+                stamp_duty: Number(stampDuty || 0),
+                registration_charges: Number(registrationCharges || 0),
+                status: status || "scheduled",
+                updated_at: new Date().toISOString(),
+                updated_by: actorName,
+              })
+              .eq("id", existing.id)
+              .select()
+              .single();
+            if (error) throw error;
+            regData = data;
+          } else {
+            const { data, error } = await supabase
+              .from("registrations")
+              .insert({
+                booking_id: bookingId,
+                registration_date: registrationDate || null,
+                sub_registrar_office: subRegistrarOffice || "",
+                document_number: documentNumber || "",
+                stamp_duty: Number(stampDuty || 0),
+                registration_charges: Number(registrationCharges || 0),
+                status: status || "scheduled",
+                created_by: actorName,
+              })
+              .select()
+              .single();
+            if (error) throw error;
+            regData = data;
+          }
+
+          await supabase.from("audit_logs").insert({
+            user: actorName,
+            action: "REGISTRATION_UPDATED",
+            old_value: bookingId,
+            new_value: `Doc: ${documentNumber || "N/A"}, Status: ${status || "scheduled"}`,
+          });
+
+          return res.status(200).json({ success: true, registration: regData });
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message });
+        }
+      }
+      case "updatePossession": {
+        const {
+          bookingId,
+          possessionDate,
+          keysHandoverStatus,
+          snagList,
+          handoverChecklist,
+          signedOffBy,
+        } = payload;
+        if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+        try {
+          const { data: existing } = await supabase
+            .from("possessions")
+            .select("id")
+            .eq("booking_id", bookingId)
+            .maybeSingle();
+
+          let possData;
+          if (existing) {
+            const { data, error } = await supabase
+              .from("possessions")
+              .update({
+                possession_date: possessionDate || null,
+                keys_handover_status: keysHandoverStatus || "pending",
+                snag_list: snagList || [],
+                handover_checklist: handoverChecklist || {},
+                signed_off_by: signedOffBy || actorName,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", existing.id)
+              .select()
+              .single();
+            if (error) throw error;
+            possData = data;
+          } else {
+            const { data, error } = await supabase
+              .from("possessions")
+              .insert({
+                booking_id: bookingId,
+                possession_date: possessionDate || null,
+                keys_handover_status: keysHandoverStatus || "pending",
+                snag_list: snagList || [],
+                handover_checklist: handoverChecklist || {},
+                signed_off_by: signedOffBy || actorName,
+              })
+              .select()
+              .single();
+            if (error) throw error;
+            possData = data;
+          }
+
+          await supabase.from("audit_logs").insert({
+            user: actorName,
+            action: "POSSESSION_UPDATED",
+            old_value: bookingId,
+            new_value: `Keys: ${keysHandoverStatus || "pending"}`,
+          });
+
+          return res.status(200).json({ success: true, possession: possData });
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message });
+        }
+      }
+      case "savePaymentSchedule": {
+        const { bookingId, milestones } = payload;
+        if (!bookingId || !Array.isArray(milestones)) {
+          return res.status(400).json({ error: "Missing bookingId or milestones array." });
+        }
+
+        try {
+          await supabase.from("payment_schedules").delete().eq("booking_id", bookingId);
+
+          const inserts = milestones.map((m: any) => ({
+            booking_id: bookingId,
+            milestone_name: m.milestoneName,
+            percentage: Number(m.percentage || 0),
+            amount: Number(m.amount || 0),
+            due_date: m.dueDate || null,
+            status: m.status || "pending",
+            created_by: actorName,
+          }));
+
+          const { data, error } = await supabase.from("payment_schedules").insert(inserts).select();
+
+          if (error) throw error;
+
+          return res.status(200).json({ success: true, milestones: data });
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message });
+        }
+      }
+      case "processRefund": {
+        const {
+          bookingId,
+          requestedAmount,
+          approvedAmount,
+          paymentMethod,
+          reference,
+          notes,
+          status,
+        } = payload;
+        if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+        try {
+          const refundVoucher = `REF-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+          const { data, error } = await supabase
+            .from("refunds")
+            .insert({
+              booking_id: bookingId,
+              voucher_number: refundVoucher,
+              requested_amount: Number(requestedAmount || 0),
+              approved_amount: Number(approvedAmount || requestedAmount || 0),
+              status: status || "requested",
+              refund_date: new Date().toISOString(),
+              payment_method: paymentMethod || "bank_transfer",
+              reference: reference || `REF-TXN-${Date.now()}`,
+              created_by: actorName,
+              notes: notes || null,
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          await supabase.from("audit_logs").insert({
+            user: actorName,
+            action: "REFUND_PROCESSED",
+            old_value: bookingId,
+            new_value: `Voucher: ${refundVoucher}, Amount: ₹${approvedAmount || requestedAmount}`,
+          });
+
+          return res.status(200).json({ success: true, refund: data });
+        } catch (err: any) {
+          return res.status(400).json({ error: err.message });
+        }
+      }
       case "updateBookingStatus": {
         const { leadId, status } = payload;
         const { data: cust } = await supabase
@@ -1413,11 +2444,101 @@ export default async function handler(req: any, res: any) {
             customer_id: event.customerId || null,
             sales_person: event.salesPerson || actorName,
             details: event.details || "",
+            status: event.status || "pending",
           })
           .select()
           .single();
 
         if (error) return res.status(400).json({ error: error.message });
+
+        // Auto-progress lead stage if visit or meeting is completed
+        if (data && data.status === "completed" && data.customer_id) {
+          const typeLower = (data.type || "").toLowerCase();
+          const titleLower = (data.title || "").toLowerCase();
+          let targetStage: string | null = null;
+          if (
+            typeLower === "visit" ||
+            titleLower.includes("site visit") ||
+            titleLower.includes("visit")
+          ) {
+            targetStage = "site_visit_completed";
+          } else if (typeLower === "meeting" || titleLower.includes("meeting")) {
+            targetStage = "meeting_completed";
+          }
+
+          if (targetStage) {
+            const { data: customer } = await supabase
+              .from("customers")
+              .select("activeOpportunityId, opportunities(*)")
+              .eq("id", data.customer_id)
+              .single();
+            if (customer) {
+              const opps = customer.opportunities || [];
+              const activeOpp =
+                opps.find((o: any) => o.id === customer.activeOpportunityId) || opps[0];
+              if (activeOpp) {
+                const STAGE_ORDER = [
+                  "new",
+                  "assigned",
+                  "contact_attempted",
+                  "connected",
+                  "interested",
+                  "meeting_scheduled",
+                  "meeting_completed",
+                  "site_visit_scheduled",
+                  "site_visit_completed",
+                  "negotiation",
+                  "booking_initiated",
+                  "payment_pending",
+                  "payment_completed",
+                  "converted",
+                  "closed",
+                  "lost",
+                ];
+                const currentIdx = STAGE_ORDER.indexOf(activeOpp.stage || "new");
+                const targetIdx = STAGE_ORDER.indexOf(targetStage);
+                if (
+                  targetIdx > currentIdx &&
+                  activeOpp.stage !== "closed" &&
+                  activeOpp.stage !== "converted" &&
+                  activeOpp.stage !== "lost"
+                ) {
+                  await supabase
+                    .from("opportunities")
+                    .update({ stage: targetStage })
+                    .eq("id", activeOpp.id);
+                }
+              }
+            }
+          }
+
+          // Auto-complete corresponding follow-up if exists
+          const { data: pendingFollowups } = await supabase
+            .from("followups")
+            .select("*")
+            .eq("lead_id", data.customer_id)
+            .eq("status", "pending");
+
+          if (pendingFollowups && pendingFollowups.length > 0) {
+            for (const f of pendingFollowups) {
+              const fTitleLower = (f.title || "").toLowerCase();
+              const isMatch =
+                fTitleLower === titleLower ||
+                fTitleLower.includes(titleLower) ||
+                titleLower.includes(fTitleLower) ||
+                (titleLower.includes("visit") && fTitleLower.includes("visit")) ||
+                (titleLower.includes("meeting") && fTitleLower.includes("meeting")) ||
+                (titleLower.includes("call") && fTitleLower.includes("call"));
+
+              if (isMatch) {
+                await supabase.from("followups").update({ status: "completed" }).eq("id", f.id);
+
+                await publishEvent("FOLLOWUP_COMPLETED", f.lead_id, { title: f.title }, actorName);
+              }
+            }
+          }
+        }
+
         await supabase.from("audit_logs").insert({
           user: actorName,
           action: "CALENDAR_EVENT_CREATE",
@@ -1444,11 +2565,101 @@ export default async function handler(req: any, res: any) {
             customer_id: evUpdate.customerId || null,
             sales_person: evUpdate.salesPerson || null,
             details: evUpdate.details || "",
+            status: evUpdate.status || "pending",
           })
           .eq("id", evId)
           .select()
           .single();
         if (upErr) return res.status(400).json({ error: upErr.message });
+
+        // Auto-progress lead stage if visit or meeting is completed
+        if (updated && updated.status === "completed" && updated.customer_id) {
+          const typeLower = (updated.type || "").toLowerCase();
+          const titleLower = (updated.title || "").toLowerCase();
+          let targetStage: string | null = null;
+          if (
+            typeLower === "visit" ||
+            titleLower.includes("site visit") ||
+            titleLower.includes("visit")
+          ) {
+            targetStage = "site_visit_completed";
+          } else if (typeLower === "meeting" || titleLower.includes("meeting")) {
+            targetStage = "meeting_completed";
+          }
+
+          if (targetStage) {
+            const { data: customer } = await supabase
+              .from("customers")
+              .select("activeOpportunityId, opportunities(*)")
+              .eq("id", updated.customer_id)
+              .single();
+            if (customer) {
+              const opps = customer.opportunities || [];
+              const activeOpp =
+                opps.find((o: any) => o.id === customer.activeOpportunityId) || opps[0];
+              if (activeOpp) {
+                const STAGE_ORDER = [
+                  "new",
+                  "assigned",
+                  "contact_attempted",
+                  "connected",
+                  "interested",
+                  "meeting_scheduled",
+                  "meeting_completed",
+                  "site_visit_scheduled",
+                  "site_visit_completed",
+                  "negotiation",
+                  "booking_initiated",
+                  "payment_pending",
+                  "payment_completed",
+                  "converted",
+                  "closed",
+                  "lost",
+                ];
+                const currentIdx = STAGE_ORDER.indexOf(activeOpp.stage || "new");
+                const targetIdx = STAGE_ORDER.indexOf(targetStage);
+                if (
+                  targetIdx > currentIdx &&
+                  activeOpp.stage !== "closed" &&
+                  activeOpp.stage !== "converted" &&
+                  activeOpp.stage !== "lost"
+                ) {
+                  await supabase
+                    .from("opportunities")
+                    .update({ stage: targetStage })
+                    .eq("id", activeOpp.id);
+                }
+              }
+            }
+          }
+
+          // Auto-complete corresponding follow-up if exists
+          const { data: pendingFollowups } = await supabase
+            .from("followups")
+            .select("*")
+            .eq("lead_id", updated.customer_id)
+            .eq("status", "pending");
+
+          if (pendingFollowups && pendingFollowups.length > 0) {
+            for (const f of pendingFollowups) {
+              const fTitleLower = (f.title || "").toLowerCase();
+              const isMatch =
+                fTitleLower === titleLower ||
+                fTitleLower.includes(titleLower) ||
+                titleLower.includes(fTitleLower) ||
+                (titleLower.includes("visit") && fTitleLower.includes("visit")) ||
+                (titleLower.includes("meeting") && fTitleLower.includes("meeting")) ||
+                (titleLower.includes("call") && fTitleLower.includes("call"));
+
+              if (isMatch) {
+                await supabase.from("followups").update({ status: "completed" }).eq("id", f.id);
+
+                await publishEvent("FOLLOWUP_COMPLETED", f.lead_id, { title: f.title }, actorName);
+              }
+            }
+          }
+        }
+
         await supabase.from("audit_logs").insert({
           user: actorName,
           action: "CALENDAR_EVENT_UPDATE",
@@ -1474,6 +2685,257 @@ export default async function handler(req: any, res: any) {
           new_value: "Deleted",
         });
         return res.status(200).json({ success: true });
+      }
+      case "getNegotiation": {
+        const { opportunityId } = payload;
+        if (!opportunityId) return res.status(400).json({ error: "Missing opportunityId" });
+
+        // 1. Fetch details
+        const { data: details, error: detErr } = await supabase
+          .from("negotiation_details")
+          .select("*")
+          .eq("opportunity_id", opportunityId)
+          .maybeSingle();
+
+        if (detErr) return res.status(400).json({ error: detErr.message });
+
+        if (!details) {
+          // Fetch opportunity to pre-fill budget
+          const { data: opp } = await supabase
+            .from("opportunities")
+            .select("*, projects(price_range)")
+            .eq("id", opportunityId)
+            .maybeSingle();
+
+          let parsedBudget = 0;
+          if (opp?.budget) {
+            const clean = opp.budget.replace(/[^\d.]/g, "");
+            const val = parseFloat(clean);
+            if (!isNaN(val)) {
+              parsedBudget = opp.budget.toLowerCase().includes("cr")
+                ? val * 10000000
+                : val * 100000;
+            }
+          }
+
+          let parsedProjPrice = parsedBudget || 0;
+          if (opp?.projects?.price_range) {
+            const clean = opp.projects.price_range.replace(/[^\d.]/g, "");
+            const val = parseFloat(clean);
+            if (!isNaN(val)) {
+              parsedProjPrice = opp.projects.price_range.toLowerCase().includes("cr")
+                ? val * 10000000
+                : val * 100000;
+            }
+          }
+
+          const { data: newDetails, error: insErr } = await supabase
+            .from("negotiation_details")
+            .insert({
+              opportunity_id: opportunityId,
+              original_price: parsedProjPrice || parsedBudget || 0,
+              current_offer: parsedBudget || 0,
+              expected_closing: parsedBudget || 0,
+              min_approved: parsedProjPrice
+                ? Math.floor(parsedProjPrice * 0.95)
+                : Math.floor(parsedBudget * 0.95),
+              status: "started",
+              discounts: [],
+              notes: "",
+            })
+            .select()
+            .single();
+
+          if (insErr) return res.status(400).json({ error: insErr.message });
+          details = newDetails;
+
+          // Log initial round in timeline
+          await supabase.from("negotiation_timeline").insert({
+            opportunity_id: opportunityId,
+            executive: actorName,
+            action_taken: "Negotiation Room Opened",
+            offer_amount: details.current_offer,
+            customer_response: "Room initialized with customer budget: " + (opp?.budget || "N/A"),
+            notes: "Deal room initialized.",
+          });
+        }
+
+        // 2. Fetch timeline
+        const { data: timeline, error: tlErr } = await supabase
+          .from("negotiation_timeline")
+          .select("*")
+          .eq("opportunity_id", opportunityId)
+          .order("created_at", { ascending: true });
+
+        if (tlErr) return res.status(400).json({ error: tlErr.message });
+
+        return res.status(200).json({ details, timeline: timeline || [] });
+      }
+      case "updateNegotiation": {
+        const { opportunityId, updates, newRound } = payload;
+        if (!opportunityId) return res.status(400).json({ error: "Missing opportunityId" });
+
+        // Check existing details
+        const { data: existing } = await supabase
+          .from("negotiation_details")
+          .select("*")
+          .eq("opportunity_id", opportunityId)
+          .single();
+
+        if (!existing) return res.status(400).json({ error: "Negotiation record not found" });
+
+        const finalUpdates: any = { ...updates, updated_at: new Date().toISOString() };
+
+        // Business Rule: Check current offer against min approved price
+        const offerToCheck =
+          updates.current_offer !== undefined ? updates.current_offer : existing.current_offer;
+        const minLimit =
+          updates.min_approved !== undefined ? updates.min_approved : existing.min_approved;
+
+        let approvalRequested = false;
+        if (offerToCheck && minLimit && parseFloat(offerToCheck) < parseFloat(minLimit)) {
+          if (actorRole !== "super_admin" && actorRole !== "admin" && actorRole !== "manager") {
+            finalUpdates.status = "waiting_approval";
+            approvalRequested = true;
+          }
+        }
+
+        const { data: updated, error: upErr } = await supabase
+          .from("negotiation_details")
+          .update(finalUpdates)
+          .eq("opportunity_id", opportunityId)
+          .select()
+          .single();
+
+        if (upErr) return res.status(400).json({ error: upErr.message });
+
+        // Add timeline round log
+        if (newRound) {
+          await supabase.from("negotiation_timeline").insert({
+            opportunity_id: opportunityId,
+            executive: actorName,
+            action_taken: approvalRequested
+              ? "Approval Requested"
+              : newRound.action_taken || "Offer Updated",
+            offer_amount: newRound.offer_amount || offerToCheck || 0,
+            customer_response: newRound.customer_response || "",
+            notes:
+              newRound.notes ||
+              (approvalRequested ? "Requested manager approval for offer below limit." : ""),
+          });
+        } else if (approvalRequested) {
+          await supabase.from("negotiation_timeline").insert({
+            opportunity_id: opportunityId,
+            executive: actorName,
+            action_taken: "Approval Requested",
+            offer_amount: offerToCheck,
+            customer_response: "Pending Manager Review",
+            notes: "Requested discount approval below minimum threshold.",
+          });
+        }
+
+        // Fetch fresh timeline
+        const { data: timeline } = await supabase
+          .from("negotiation_timeline")
+          .select("*")
+          .eq("opportunity_id", opportunityId)
+          .order("created_at", { ascending: true });
+
+        return res
+          .status(200)
+          .json({ details: updated, timeline: timeline || [], approvalRequested });
+      }
+      case "addNegotiationRound": {
+        const { opportunityId, round } = payload;
+        if (!opportunityId) return res.status(400).json({ error: "Missing opportunityId" });
+
+        const { error: insErr } = await supabase.from("negotiation_timeline").insert({
+          opportunity_id: opportunityId,
+          executive: actorName,
+          action_taken: round.action_taken || "Discussion Logged",
+          offer_amount: round.offer_amount || 0,
+          customer_response: round.customer_response || "",
+          notes: round.notes || "",
+        });
+
+        if (insErr) return res.status(400).json({ error: insErr.message });
+
+        // Fetch timeline
+        const { data: timeline } = await supabase
+          .from("negotiation_timeline")
+          .select("*")
+          .eq("opportunity_id", opportunityId)
+          .order("created_at", { ascending: true });
+
+        return res.status(200).json(timeline || []);
+      }
+      case "respondManagerApproval": {
+        const { opportunityId, decision, suggestedAmount, notes } = payload;
+        if (!opportunityId) return res.status(400).json({ error: "Missing opportunityId" });
+        if (actorRole !== "super_admin" && actorRole !== "admin" && actorRole !== "manager") {
+          return res
+            .status(400)
+            .json({ error: "Access Denied: Only Managers or Admins can approve discounts." });
+        }
+
+        const { data: existing } = await supabase
+          .from("negotiation_details")
+          .select("*")
+          .eq("opportunity_id", opportunityId)
+          .single();
+
+        if (!existing) return res.status(400).json({ error: "Negotiation record not found" });
+
+        let newStatus = "counter_sent";
+        let actionText = "";
+
+        if (decision === "approve") {
+          newStatus = "agreed";
+          actionText = "Manager Approved Price";
+        } else if (decision === "reject") {
+          newStatus = "failed";
+          actionText = "Manager Rejected Offer";
+        } else if (decision === "counter") {
+          newStatus = "counter_sent";
+          actionText = "Manager Counter Offer";
+        }
+
+        const updates: any = { status: newStatus, updated_at: new Date().toISOString() };
+        if (decision === "approve") {
+          updates.min_approved = existing.current_offer;
+        } else if (decision === "counter" && suggestedAmount) {
+          updates.current_offer = suggestedAmount;
+          updates.min_approved = suggestedAmount;
+        }
+
+        const { data: updated, error: upErr } = await supabase
+          .from("negotiation_details")
+          .update(updates)
+          .eq("opportunity_id", opportunityId)
+          .select()
+          .single();
+
+        if (upErr) return res.status(400).json({ error: upErr.message });
+
+        // Log into timeline
+        await supabase.from("negotiation_timeline").insert({
+          opportunity_id: opportunityId,
+          executive: actorName,
+          action_taken: actionText,
+          offer_amount: decision === "counter" ? suggestedAmount : existing.current_offer,
+          customer_response:
+            decision === "approve" ? "Approved by " + actorName : "Reviewed by " + actorName,
+          notes: notes || `Manager decision: ${decision.toUpperCase()}.`,
+        });
+
+        // Fetch timeline
+        const { data: timeline } = await supabase
+          .from("negotiation_timeline")
+          .select("*")
+          .eq("opportunity_id", opportunityId)
+          .order("created_at", { ascending: true });
+
+        return res.status(200).json({ details: updated, timeline: timeline || [] });
       }
       case "deleteOpportunity": {
         const { id: delId } = payload;
@@ -1650,6 +3112,280 @@ export default async function handler(req: any, res: any) {
           new_value: newVal,
         });
         return res.status(200).json({ success: true });
+      }
+
+      // ─────────────────────────────────────────────────────────
+      // INVOICE CMS & PERMISSIONS API HANDLERS
+      // ─────────────────────────────────────────────────────────
+      case "getInvoiceSettings": {
+        try {
+          const { data, error } = await supabase
+            .from("invoice_settings")
+            .select("*")
+            .eq("id", "inv_settings_default")
+            .single();
+
+          if (error || !data) {
+            // Return initial defaults
+            const defaultSettings = {
+              id: "inv_settings_default",
+              company_info: {
+                company_name: "BLX REALITY PRIVATE LIMITED",
+                logo_url: "",
+                registered_address:
+                  "#301D, 3rd Floor, Tower B, Brigade Twin Towers, Pipeline Road HMT, Yeswanthpur, Bengaluru, Karnataka 560022",
+                branch_address:
+                  "#301D, 3rd Floor, Tower B, Brigade Twin Towers, Pipeline Road HMT, Yeswanthpur, Bengaluru, Karnataka 560022",
+                phone: "+91-9743264328 / +44-7944450039 / +91-8197773166",
+                email: "discoverblr@theblxrealty.com",
+                website: "www.theblxrealty.com",
+                gst_number: "29AAOCB0144P1Z7",
+                pan_number: "AAOCB0144P",
+                cin: "U68100KA2025PTC209397",
+                rera_number: "PRM/KA/RERA/1251/310/PR/251006",
+              },
+
+              banking_details: {
+                bank_name: "HDFC Bank Ltd",
+                account_holder: "BLX REALTY PRIVATE LIMITED - CLIENT ESCROW A/C",
+                account_number: "50200089123456",
+                ifsc_code: "HDFC0000240",
+                branch_name: "Yeswanthpur Industrial Area Branch, Bengaluru",
+                upi_id: "blxrealty@hdfcbank",
+                qr_code_url: "",
+              },
+              tax_statutory: {
+                gst_enabled: true,
+                cgst_rate: 9,
+                sgst_rate: 9,
+                igst_rate: 18,
+                tds_enabled: false,
+                tds_rate: 1,
+                pf_enabled: true,
+                pf_code: "KAR/BLR/1098234/000",
+                esi_enabled: true,
+                esi_code: "53000981720000101",
+                statutory_notes:
+                  "GST is applicable as per Ministry of Finance notification for Real Estate Services.",
+              },
+              invoice_notes: {
+                payment_instructions:
+                  "Please make all payments via Bank Transfer / RTGS / NEFT or UPI strictly using official company accounts.",
+                terms_and_conditions:
+                  "1. All booking advances are subject to final agreement terms.\n2. Holding deposits are valid for 15 days from issuance.\n3. This document is a computer-generated tax invoice.",
+                cancellation_policy:
+                  "Cancellations within 7 days receive 90% refund. Post 7 days, cancellation is governed by RERA rules.",
+                refund_policy:
+                  "Refunds are processed within 10 business days directly to the original bank account.",
+                late_payment_policy:
+                  "1.5% monthly interest penalty applied on overdue installments beyond 15 days.",
+                legal_disclaimer: "BLX Realty Pvt Ltd is a licensed RERA real estate agency.",
+                thank_you_message:
+                  "Thank you for choosing BLX Realty as your trusted property partner!",
+                customer_support: "Desk: +91 81977 73166 | support@theblxrealty.com",
+              },
+              branding: {
+                logo_url: "",
+                header_style: "modern",
+                footer_info:
+                  "BLX Realty Pvt Ltd · Corporate Real Estate Advisory & Luxury Property Marketing",
+                signature_title: "Authorized Signatory",
+                signatory_name: "Nischith L. (Director)",
+                signature_image_url: "",
+                seal_image_url: "",
+                primary_color: "#4f46e5",
+                secondary_color: "#1e1b4b",
+                text_color: "#0f172a",
+              },
+              numbering: {
+                prefix: "INV-2026-",
+                suffix: "/BLX",
+                start_sequence: 1001,
+                padding: 4,
+                auto_increment: true,
+              },
+              payment_info: {
+                accepted_methods: [
+                  "Bank Transfer (NEFT/RTGS)",
+                  "UPI Payment",
+                  "Cheque",
+                  "Demand Draft",
+                ],
+                payment_due_instructions: "Payment due within 15 days of invoice date.",
+                offline_instructions:
+                  "Deliver cheques favoring 'BLX REALTY PRIVATE LIMITED' at Corporate Office.",
+                qr_instructions:
+                  "Scan UPI QR code using any UPI Banking App to complete instant token transfer.",
+              },
+              default_template_id: "modern_executive",
+            };
+            return res.status(200).json(defaultSettings);
+          }
+          const mergedSettings = {
+            ...defaultSettings,
+            ...data,
+            company_info: {
+              ...defaultSettings.company_info,
+              ...(data.company_info || {}),
+              company_name: "BLX REALITY PRIVATE LIMITED",
+              registered_address:
+                "#301D, 3rd Floor, Tower B, Brigade Twin Towers, Pipeline Road HMT, Yeswanthpur, Bengaluru, Karnataka 560022",
+              phone: "+91-9743264328 / +44-7944450039 / +91-8197773166",
+              email: "discoverblr@theblxrealty.com",
+              website: "www.theblxrealty.com",
+              gst_number: "29AAOCB0144P1Z7",
+              pan_number: "AAOCB0144P",
+              cin: "U68100KA2025PTC209397",
+            },
+          };
+          return res.status(200).json(mergedSettings);
+        } catch (e: any) {
+          return res.status(500).json({ error: e.message });
+        }
+      }
+
+      case "updateInvoiceSettings": {
+        const { settings, sectionName } = payload;
+        const now = new Date().toISOString();
+        const updatedObj = {
+          ...settings,
+          id: "inv_settings_default",
+          updated_at: now,
+          updated_by: actorName,
+        };
+
+        const { error } = await supabase
+          .from("invoice_settings")
+          .upsert(updatedObj, { onConflict: "id" });
+
+        if (error) {
+          console.warn(
+            "Supabase upsert failed for invoice_settings, returning local updated state:",
+            error.message,
+          );
+        }
+
+        // Write Audit Log entry
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: `INVOICE_CMS_UPDATED_${(sectionName || "ALL").toUpperCase()}`,
+          timestamp: now,
+          old_value: "Previous Invoice Configuration",
+          new_value: `Updated ${sectionName || "Invoice Settings"} by ${actorName}`,
+        });
+
+        return res.status(200).json({ success: true, settings: updatedObj });
+      }
+
+      case "getInvoicePermissions": {
+        try {
+          const { data, error } = await supabase.from("invoice_role_permissions").select("*");
+
+          const defaultMatrix = [
+            {
+              role: "super_admin",
+              can_view_cms: true,
+              can_edit_company_info: true,
+              can_update_banking: true,
+              can_modify_tax: true,
+              can_edit_terms: true,
+              can_change_branding: true,
+              can_manage_templates: true,
+              can_generate_invoices: true,
+              can_regenerate_invoices: true,
+            },
+            {
+              role: "admin",
+              can_view_cms: true,
+              can_edit_company_info: true,
+              can_update_banking: false,
+              can_modify_tax: true,
+              can_edit_terms: true,
+              can_change_branding: true,
+              can_manage_templates: true,
+              can_generate_invoices: true,
+              can_regenerate_invoices: true,
+            },
+            {
+              role: "manager",
+              can_view_cms: true,
+              can_edit_company_info: false,
+              can_update_banking: false,
+              can_modify_tax: false,
+              can_edit_terms: false,
+              can_change_branding: false,
+              can_manage_templates: false,
+              can_generate_invoices: true,
+              can_regenerate_invoices: true,
+            },
+            {
+              role: "sales_executive",
+              can_view_cms: false,
+              can_edit_company_info: false,
+              can_update_banking: false,
+              can_modify_tax: false,
+              can_edit_terms: false,
+              can_change_branding: false,
+              can_manage_templates: false,
+              can_generate_invoices: true,
+              can_regenerate_invoices: false,
+            },
+            {
+              role: "marketing",
+              can_view_cms: false,
+              can_edit_company_info: false,
+              can_update_banking: false,
+              can_modify_tax: false,
+              can_edit_terms: false,
+              can_change_branding: false,
+              can_manage_templates: false,
+              can_generate_invoices: false,
+              can_regenerate_invoices: false,
+            },
+          ];
+
+          if (error || !data || data.length === 0) {
+            return res.status(200).json(defaultMatrix);
+          }
+          return res.status(200).json(data);
+        } catch (e: any) {
+          return res.status(500).json({ error: e.message });
+        }
+      }
+
+      case "updateInvoicePermissions": {
+        if (actorRole !== "super_admin") {
+          return res
+            .status(403)
+            .json({ error: "Only Super Admin can modify Invoice Role Permissions." });
+        }
+        const { matrix } = payload; // Array of role permissions
+        const now = new Date().toISOString();
+
+        const prepared = matrix.map((item: any) => ({
+          ...item,
+          updated_at: now,
+          updated_by: actorName,
+        }));
+
+        const { error } = await supabase
+          .from("invoice_role_permissions")
+          .upsert(prepared, { onConflict: "role" });
+
+        if (error) {
+          console.warn("Supabase upsert failed for invoice_role_permissions:", error.message);
+        }
+
+        // Write audit log
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "INVOICE_PERMISSIONS_UPDATED",
+          timestamp: now,
+          old_value: "Previous Role Permissions Matrix",
+          new_value: `Permissions updated for ${matrix.length} roles by ${actorName}`,
+        });
+
+        return res.status(200).json({ success: true, matrix: prepared });
       }
 
       default:

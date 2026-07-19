@@ -15,10 +15,13 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PostSalesRouteImport } from './routes/post-sales'
 import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as LeadsRouteImport } from './routes/leads'
-import { Route as InventoryRouteImport } from './routes/inventory'
+import { Route as LeadAssignmentSettingsRouteImport } from './routes/lead-assignment-settings'
+import { Route as InvoiceCmsRouteImport } from './routes/invoice-cms'
 import { Route as FollowupsRouteImport } from './routes/followups'
+import { Route as FinanceDashboardRouteImport } from './routes/finance-dashboard'
 import { Route as DevelopersRouteImport } from './routes/developers'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as BookingsRouteImport } from './routes/bookings'
@@ -57,6 +60,11 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PostSalesRoute = PostSalesRouteImport.update({
+  id: '/post-sales',
+  path: '/post-sales',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PaymentsRoute = PaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
@@ -67,14 +75,24 @@ const LeadsRoute = LeadsRouteImport.update({
   path: '/leads',
   getParentRoute: () => rootRouteImport,
 } as any)
-const InventoryRoute = InventoryRouteImport.update({
-  id: '/inventory',
-  path: '/inventory',
+const LeadAssignmentSettingsRoute = LeadAssignmentSettingsRouteImport.update({
+  id: '/lead-assignment-settings',
+  path: '/lead-assignment-settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InvoiceCmsRoute = InvoiceCmsRouteImport.update({
+  id: '/invoice-cms',
+  path: '/invoice-cms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FollowupsRoute = FollowupsRouteImport.update({
   id: '/followups',
   path: '/followups',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinanceDashboardRoute = FinanceDashboardRouteImport.update({
+  id: '/finance-dashboard',
+  path: '/finance-dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DevelopersRoute = DevelopersRouteImport.update({
@@ -121,10 +139,13 @@ export interface FileRoutesByFullPath {
   '/bookings': typeof BookingsRoute
   '/calendar': typeof CalendarRoute
   '/developers': typeof DevelopersRoute
+  '/finance-dashboard': typeof FinanceDashboardRoute
   '/followups': typeof FollowupsRoute
-  '/inventory': typeof InventoryRoute
+  '/invoice-cms': typeof InvoiceCmsRoute
+  '/lead-assignment-settings': typeof LeadAssignmentSettingsRoute
   '/leads': typeof LeadsRoute
   '/payments': typeof PaymentsRoute
+  '/post-sales': typeof PostSalesRoute
   '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
@@ -140,10 +161,13 @@ export interface FileRoutesByTo {
   '/bookings': typeof BookingsRoute
   '/calendar': typeof CalendarRoute
   '/developers': typeof DevelopersRoute
+  '/finance-dashboard': typeof FinanceDashboardRoute
   '/followups': typeof FollowupsRoute
-  '/inventory': typeof InventoryRoute
+  '/invoice-cms': typeof InvoiceCmsRoute
+  '/lead-assignment-settings': typeof LeadAssignmentSettingsRoute
   '/leads': typeof LeadsRoute
   '/payments': typeof PaymentsRoute
+  '/post-sales': typeof PostSalesRoute
   '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
@@ -160,10 +184,13 @@ export interface FileRoutesById {
   '/bookings': typeof BookingsRoute
   '/calendar': typeof CalendarRoute
   '/developers': typeof DevelopersRoute
+  '/finance-dashboard': typeof FinanceDashboardRoute
   '/followups': typeof FollowupsRoute
-  '/inventory': typeof InventoryRoute
+  '/invoice-cms': typeof InvoiceCmsRoute
+  '/lead-assignment-settings': typeof LeadAssignmentSettingsRoute
   '/leads': typeof LeadsRoute
   '/payments': typeof PaymentsRoute
+  '/post-sales': typeof PostSalesRoute
   '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
@@ -181,10 +208,13 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/calendar'
     | '/developers'
+    | '/finance-dashboard'
     | '/followups'
-    | '/inventory'
+    | '/invoice-cms'
+    | '/lead-assignment-settings'
     | '/leads'
     | '/payments'
+    | '/post-sales'
     | '/profile'
     | '/projects'
     | '/reports'
@@ -200,10 +230,13 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/calendar'
     | '/developers'
+    | '/finance-dashboard'
     | '/followups'
-    | '/inventory'
+    | '/invoice-cms'
+    | '/lead-assignment-settings'
     | '/leads'
     | '/payments'
+    | '/post-sales'
     | '/profile'
     | '/projects'
     | '/reports'
@@ -219,10 +252,13 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/calendar'
     | '/developers'
+    | '/finance-dashboard'
     | '/followups'
-    | '/inventory'
+    | '/invoice-cms'
+    | '/lead-assignment-settings'
     | '/leads'
     | '/payments'
+    | '/post-sales'
     | '/profile'
     | '/projects'
     | '/reports'
@@ -239,10 +275,13 @@ export interface RootRouteChildren {
   BookingsRoute: typeof BookingsRoute
   CalendarRoute: typeof CalendarRoute
   DevelopersRoute: typeof DevelopersRoute
+  FinanceDashboardRoute: typeof FinanceDashboardRoute
   FollowupsRoute: typeof FollowupsRoute
-  InventoryRoute: typeof InventoryRoute
+  InvoiceCmsRoute: typeof InvoiceCmsRoute
+  LeadAssignmentSettingsRoute: typeof LeadAssignmentSettingsRoute
   LeadsRoute: typeof LeadsRoute
   PaymentsRoute: typeof PaymentsRoute
+  PostSalesRoute: typeof PostSalesRoute
   ProfileRoute: typeof ProfileRoute
   ProjectsRoute: typeof ProjectsRoute
   ReportsRoute: typeof ReportsRoute
@@ -295,6 +334,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/post-sales': {
+      id: '/post-sales'
+      path: '/post-sales'
+      fullPath: '/post-sales'
+      preLoaderRoute: typeof PostSalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/payments': {
       id: '/payments'
       path: '/payments'
@@ -309,11 +355,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LeadsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/inventory': {
-      id: '/inventory'
-      path: '/inventory'
-      fullPath: '/inventory'
-      preLoaderRoute: typeof InventoryRouteImport
+    '/lead-assignment-settings': {
+      id: '/lead-assignment-settings'
+      path: '/lead-assignment-settings'
+      fullPath: '/lead-assignment-settings'
+      preLoaderRoute: typeof LeadAssignmentSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invoice-cms': {
+      id: '/invoice-cms'
+      path: '/invoice-cms'
+      fullPath: '/invoice-cms'
+      preLoaderRoute: typeof InvoiceCmsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/followups': {
@@ -321,6 +374,13 @@ declare module '@tanstack/react-router' {
       path: '/followups'
       fullPath: '/followups'
       preLoaderRoute: typeof FollowupsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/finance-dashboard': {
+      id: '/finance-dashboard'
+      path: '/finance-dashboard'
+      fullPath: '/finance-dashboard'
+      preLoaderRoute: typeof FinanceDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/developers': {
@@ -383,10 +443,13 @@ const rootRouteChildren: RootRouteChildren = {
   BookingsRoute: BookingsRoute,
   CalendarRoute: CalendarRoute,
   DevelopersRoute: DevelopersRoute,
+  FinanceDashboardRoute: FinanceDashboardRoute,
   FollowupsRoute: FollowupsRoute,
-  InventoryRoute: InventoryRoute,
+  InvoiceCmsRoute: InvoiceCmsRoute,
+  LeadAssignmentSettingsRoute: LeadAssignmentSettingsRoute,
   LeadsRoute: LeadsRoute,
   PaymentsRoute: PaymentsRoute,
+  PostSalesRoute: PostSalesRoute,
   ProfileRoute: ProfileRoute,
   ProjectsRoute: ProjectsRoute,
   ReportsRoute: ReportsRoute,

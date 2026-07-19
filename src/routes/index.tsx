@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -190,6 +190,15 @@ const DEFAULT_WIDGET_DECK: WidgetConfig[] = [
 
 function Dashboard() {
   const { user, role } = useAuth();
+  const navigate = useNavigate();
+
+  // Marketing role: redirect to Projects page immediately
+  useEffect(() => {
+    if (role === "marketing") {
+      navigate({ to: "/projects" });
+    }
+  }, [role, navigate]);
+
   const firstName =
     (user?.user_metadata?.full_name as string | undefined)?.split(" ")[0] ?? "there";
 
@@ -443,7 +452,10 @@ function Dashboard() {
     return matchName || matchPhone || matchEmail || matchProject || matchOwner || matchSource;
   });
 
-  const overdueFollowups = followups.filter((f) => f.status === "overdue");
+  const now = new Date();
+  const overdueFollowups = followups.filter(
+    (f) => f.status === "overdue" || (f.status === "pending" && new Date(f.time) < now),
+  );
 
   // Sorting widgets: Pinned first, then by layout order
   const sortedWidgets = [...widgetDeck]

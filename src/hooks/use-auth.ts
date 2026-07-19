@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 
-export type AppRole = "super_admin" | "admin" | "sales_executive" | "manager";
+export type AppRole = "super_admin" | "admin" | "sales_executive" | "manager" | "marketing";
 
 export interface AuthState {
   session: any | null;

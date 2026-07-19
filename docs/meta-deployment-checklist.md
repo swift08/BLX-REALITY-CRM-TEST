@@ -38,13 +38,13 @@ CREATE INDEX IF NOT EXISTS idx_meta_logs_leadgen ON meta_webhook_logs(leadgen_id
 
 Configure the following environment variables on **Vercel** under **Project Settings → Environment Variables**:
 
-| Variable Name | Description | Example / Recommendations |
-|---|---|---|
-| `META_APP_ID` | Your Meta App ID. | `1065172274005031` |
-| `META_APP_SECRET` | Your Meta App Secret (used to verify incoming request signatures). | `32-character hexadecimal string` |
-| `META_VERIFY_TOKEN` | A custom secret string that you define for the handshake. | `blx_reality_fb_verify_token_2026` |
-| `META_ACCESS_TOKEN` | Long-Lived Page Access Token or System User Token. | `EAAC...` (Must have `ads_management`, `pages_show_list`, `pages_read_engagement` permissions) |
-| `META_GRAPH_VERSION` | Meta Graph API Version to fetch lead details. | `v23.0` |
+| Variable Name        | Description                                                        | Example / Recommendations                                                                      |
+| -------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `META_APP_ID`        | Your Meta App ID.                                                  | `1065172274005031`                                                                             |
+| `META_APP_SECRET`    | Your Meta App Secret (used to verify incoming request signatures). | `32-character hexadecimal string`                                                              |
+| `META_VERIFY_TOKEN`  | A custom secret string that you define for the handshake.          | `blx_reality_fb_verify_token_2026`                                                             |
+| `META_ACCESS_TOKEN`  | Long-Lived Page Access Token or System User Token.                 | `EAAC...` (Must have `ads_management`, `pages_show_list`, `pages_read_engagement` permissions) |
+| `META_GRAPH_VERSION` | Meta Graph API Version to fetch lead details.                      | `v23.0`                                                                                        |
 
 ---
 
@@ -70,7 +70,7 @@ Configure the following environment variables on **Vercel** under **Project Sett
 4. Set the **Object/Product** dropdown to **Page**.
 5. Click **Configure a Webhook** and fill in:
    - **Callback URL**: `https://<your-crm-domain>/api/meta/webhook`
-   - **Verify Token**: *Use the exact string configured in `META_VERIFY_TOKEN`*
+   - **Verify Token**: _Use the exact string configured in `META_VERIFY_TOKEN`_
 6. Click **Verify and Save**. Meta will immediately ping your endpoint; once successful, the webhook is active.
 7. Under the list of Page subscription fields, locate **`leadgen`** and click **Subscribe**.
 

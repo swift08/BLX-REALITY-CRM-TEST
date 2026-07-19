@@ -115,6 +115,7 @@ export function AppTopbar({
           admin: ["Admin@2026"],
           manager: ["Manager@2026"],
           sales_executive: ["Dev@2026", "Vishal@2026", "Manoj@2026", "Tejasvijois@2026"],
+          marketing: ["Marketing@2026"],
         };
         const allowed = validPasswords[role || "super_admin"] || [];
         if (allowed.length > 0 && !allowed.includes(currentPassword)) {
@@ -233,6 +234,7 @@ export function AppTopbar({
         admin: "admin@blxreality.com",
         sales_executive: "dev@blxreality.com",
         manager: "manager@blxreality.com",
+        marketing: "marketing@blxreality.com",
       };
       const filtered = crmUsers.filter((u) => u.role === proposedRole);
       if (filtered.length > 0) {
@@ -266,6 +268,7 @@ export function AppTopbar({
           admin: "admin@blxreality.com",
           sales_executive: "dev@blxreality.com",
           manager: "manager@blxreality.com",
+          marketing: "marketing@blxreality.com",
         };
         const targetEmail = selectedSwapEmail || emailMap[proposedRole];
 
@@ -284,6 +287,7 @@ export function AppTopbar({
           admin: ["Admin@2026"],
           manager: ["Manager@2026"],
           sales_executive: ["Dev@2026", "Vishal@2026", "Manoj@2026", "Tejasvijois@2026"],
+          marketing: ["Marketing@2026"],
         };
 
         const allowed = validPasswords[proposedRole] || [];
@@ -618,6 +622,7 @@ export function AppTopbar({
                 <SelectItem value="admin">Admin Operations View</SelectItem>
                 <SelectItem value="manager">Manager View</SelectItem>
                 <SelectItem value="sales_executive">Sales Executive View</SelectItem>
+                <SelectItem value="marketing">Marketing View</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -731,7 +736,10 @@ export function AppTopbar({
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-9 w-9 rounded-full shrink-0">
               <Avatar className="h-9 w-9">
-                <AvatarImage src={user?.user_metadata?.avatar_url || ""} alt={user?.user_metadata?.full_name || "User"} />
+                <AvatarImage
+                  src={user?.user_metadata?.avatar_url || ""}
+                  alt={user?.user_metadata?.full_name || "User"}
+                />
                 <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs uppercase">
                   {(user?.user_metadata?.full_name || user?.email || "U").substring(0, 2)}
                 </AvatarFallback>
@@ -750,43 +758,61 @@ export function AppTopbar({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate({ to: "/profile" })} className="cursor-pointer">
+            <DropdownMenuItem
+              onClick={() => navigate({ to: "/profile" })}
+              className="cursor-pointer"
+            >
               <User className="mr-2 h-4 w-4" />
               <span>My Profile</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setShowChangePassword(true)} className="cursor-pointer">
+            <DropdownMenuItem
+              onClick={() => setShowChangePassword(true)}
+              className="cursor-pointer"
+            >
               <KeyRound className="mr-2 h-4 w-4" />
               <span>Change Password</span>
             </DropdownMenuItem>
-            
+
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate({ to: "/settings" })} className="cursor-pointer">
+            <DropdownMenuItem
+              onClick={() => navigate({ to: "/settings" })}
+              className="cursor-pointer"
+            >
               <SettingsIcon className="mr-2 h-4 w-4" />
               <span>Settings</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate({ to: "/developers" })} className="cursor-pointer">
+            <DropdownMenuItem
+              onClick={() => navigate({ to: "/developers" })}
+              className="cursor-pointer"
+            >
               <BuildingIcon className="mr-2 h-4 w-4" />
               <span>Developers</span>
             </DropdownMenuItem>
             {role && (role === "super_admin" || role === "admin" || role === "manager") && (
-              <DropdownMenuItem onClick={() => navigate({ to: "/auditlogs" })} className="cursor-pointer">
+              <DropdownMenuItem
+                onClick={() => navigate({ to: "/auditlogs" })}
+                className="cursor-pointer"
+              >
                 <HistoryIcon className="mr-2 h-4 w-4" />
                 <span>Audit Logs</span>
               </DropdownMenuItem>
             )}
             {role && (role === "super_admin" || role === "admin") && (
-              <DropdownMenuItem onClick={() => navigate({ to: "/users" })} className="cursor-pointer">
+              <DropdownMenuItem
+                onClick={() => navigate({ to: "/users" })}
+                className="cursor-pointer"
+              >
                 <UsersIcon className="mr-2 h-4 w-4" />
                 <span>Users Management</span>
               </DropdownMenuItem>
             )}
-            
+
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={async () => {
                 await signOut();
                 navigate({ to: "/auth" });
-              }} 
+              }}
               className="text-red-500 hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
             >
               <LogOut className="mr-2 h-4 w-4" />
@@ -883,7 +909,8 @@ export function AppTopbar({
               <KeyRound className="h-5 w-5 text-primary" /> Change Password
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-1">
-              Please enter your current password and your new password. Passwords must be at least 6 characters.
+              Please enter your current password and your new password. Passwords must be at least 6
+              characters.
             </DialogDescription>
           </DialogHeader>
 
@@ -904,7 +931,11 @@ export function AppTopbar({
                   onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                 >
-                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showCurrentPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -946,7 +977,11 @@ export function AppTopbar({
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                 >
-                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>

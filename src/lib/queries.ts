@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
-import { isLeadVisible } from "@/lib/permissions";
+import { useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { isLeadVisible, isInvoiceEligibleStage } from "@/lib/permissions";
 import type { AppRole } from "@/hooks/use-auth";
 
 // ----------------------------------------------------
@@ -97,7 +98,16 @@ export interface Booking {
   unit_id: string;
   opportunity_id: string;
   amount: number;
-  payment_status: "pending" | "completed" | "void";
+  payment_status:
+    | "pending"
+    | "completed"
+    | "void"
+    | "booking_initiated"
+    | "initiated"
+    | "payment_completed"
+    | "payment_pending"
+    | "closed";
+
   booking_date: string;
   status?: string;
   invoices?: Invoice[];
@@ -137,6 +147,18 @@ export interface CommunicationLog {
   attachments?: { name: string; url: string; size: number }[];
 }
 
+export interface InteractionLog {
+  id: string;
+  customer_id: string;
+  type: string;
+  direction: "inbound" | "outbound";
+  summary: string;
+  details?: string;
+  time: string;
+  next_followup?: string | null;
+  created_by?: string;
+}
+
 export interface Document {
   id: string;
   customerId: string;
@@ -162,6 +184,7 @@ export interface Customer {
   opportunities: Opportunity[];
   activities: Activity[];
   communications: CommunicationLog[];
+  interactions: InteractionLog[];
   documents: Document[];
   notes: Note[];
   timeline: { title: string; time: string; description?: string }[];
@@ -265,6 +288,7 @@ export interface CalendarEvent {
   opportunityId?: string;
   salesPerson?: string;
   details?: string;
+  status?: string;
 }
 
 export interface WorkflowRule {
@@ -299,6 +323,8 @@ export interface CRMUser {
   email: string;
   role: AppRole;
   isDisabled?: boolean;
+  assignment_status?: "available" | "paused" | "inactive";
+  assigned_projects?: string[];
 }
 
 // ----------------------------------------------------
@@ -524,12 +550,49 @@ export function useInventory(projectId?: string) {
   });
 }
 
+export interface InvoiceRecord {
+  id: string;
+  booking_id: string;
+  invoice_number?: string;
+  status: "draft" | "pending_approval" | "issued" | "partially_paid" | "paid" | "cancelled";
+  amount: number;
+  amount_paid: number;
+  outstanding_amount: number;
+  due_date?: string;
+  issued_at?: string;
+  issued_by?: string;
+  snapshot?: any;
+  payments?: PaymentRecord[];
+}
+
+export interface PaymentRecord {
+  id: string;
+  invoice_id: string;
+  booking_id?: string;
+  amount: number;
+  payment_method: string;
+  reference: string;
+  receipt_number?: string;
+  date: string;
+  created_by?: string;
+  notes?: string;
+}
+
 export interface RichBooking {
   id: string;
   lead_id: string;
   customer_name: string;
+  customer_phone?: string;
+  customer_email?: string;
+  customer_stage?: string;
+  owner_id?: string;
   project_name: string;
   unit_number: string;
+  amount: number;
+  booking_date?: string;
+  is_locked?: boolean;
+  primary_invoice_id?: string;
+  invoice?: InvoiceRecord;
   booking: Booking;
 }
 
@@ -537,7 +600,7 @@ export function useBookings() {
   return useQuery({
     queryKey: ["bookings"],
     queryFn: async (): Promise<RichBooking[]> => {
-      const rawBookings = (await callApi("getBookings")) as Booking[];
+      const rawBookings = (await callApi("getBookings")) as any[];
       const customers = (await callApi("getLeads")) as Customer[];
       const projects = (await callApi("getProjects")) as ProjectRow[];
       const inventory = (await callApi("getInventory")) as UnitRow[];
@@ -572,12 +635,54 @@ export function useBookings() {
         const unit = inventory.find((u) => u.id === bk.unit_id);
         if (unit) unitNumber = unit.unit_number;
 
+        const invoicesList: any[] = bk.invoices || [];
+        const primaryInv =
+          invoicesList.find((i: any) => i.status !== "cancelled") || invoicesList[0] || null;
+
+        const isLocked = Boolean(
+          bk.is_locked ||
+          (primaryInv &&
+            (primaryInv.status === "issued" ||
+              primaryInv.status === "paid" ||
+              primaryInv.status === "partially_paid")),
+        );
+
         return {
           id: bk.id,
           lead_id: leadId,
           customer_name: customerName,
+          customer_phone: foundCust?.phone || "",
+          customer_email: foundCust?.email || "",
+          customer_stage: foundOpp?.stage || "booking_initiated",
+          owner_id: foundOpp?.owner || "Unassigned",
           project_name: projectName,
           unit_number: unitNumber,
+          amount: bk.amount || 0,
+          booking_date: bk.booking_date,
+          is_locked: isLocked,
+          primary_invoice_id: bk.primary_invoice_id || primaryInv?.id,
+          invoice: primaryInv
+            ? {
+                id: primaryInv.id,
+                booking_id: primaryInv.booking_id || bk.id,
+                invoice_number:
+                  primaryInv.invoice_number ||
+                  `INV-2026-${primaryInv.id.slice(-4).toUpperCase()}/BLX`,
+                status: primaryInv.status || "issued",
+                amount: Number(primaryInv.amount || bk.amount || 0),
+                amount_paid: Number(
+                  primaryInv.amount_paid || (primaryInv.status === "paid" ? bk.amount : 0),
+                ),
+                outstanding_amount: Number(
+                  primaryInv.outstanding_amount || (primaryInv.status === "paid" ? 0 : bk.amount),
+                ),
+                due_date: primaryInv.due_date,
+                issued_at: primaryInv.issued_at,
+                issued_by: primaryInv.issued_by,
+                snapshot: primaryInv.snapshot,
+                payments: primaryInv.payments || [],
+              }
+            : undefined,
           booking: {
             ...bk,
             status: bk.payment_status,
@@ -586,6 +691,83 @@ export function useBookings() {
       });
     },
   });
+}
+
+/**
+ * Mutation hook to issue an official tax invoice bound to a specific booking.
+ */
+export function useCreateBookingInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { bookingId: string; dueDate?: string; snapshot?: any }) => {
+      return callApi("createBookingInvoice", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bookings"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
+
+/**
+ * Mutation hook to record a received payment against an issued tax invoice.
+ */
+export function useRecordPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      invoiceId: string;
+      amount: number;
+      paymentMethod?: string;
+      reference?: string;
+      notes?: string;
+    }) => {
+      return callApi("recordInvoicePayment", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bookings"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
+
+/**
+ * Mutation hook to cancel an issued invoice.
+ */
+export function useCancelInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { invoiceId: string; reason?: string }) => {
+      return callApi("cancelInvoice", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bookings"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
+
+/**
+ * Custom hook returning ONLY invoice-eligible bookings scoped to the current user's role and assigned leads.
+ * Enforces ownership access rules and sales funnel stage criteria.
+ */
+export function useEligibleInvoiceBookings(role: AppRole | null, userId: string | null) {
+  const { data: bookings = [], isLoading } = useBookings();
+  const eligibleBookings = useMemo(() => {
+    if (!role || !userId) return [];
+    return bookings.filter((b) => {
+      // 1. Role-scoped ownership check
+      const isVisible = isLeadVisible(role, userId, b.owner_id || null);
+      // 2. Funnel stage eligibility check
+      const isEligible =
+        isInvoiceEligibleStage(b.customer_stage) ||
+        b.booking?.payment_status === "completed" ||
+        b.booking?.payment_status === "pending";
+      return isVisible && isEligible;
+    });
+  }, [bookings, role, userId]);
+
+  return { data: eligibleBookings, isLoading };
 }
 
 function getCurrentUserFullName() {
@@ -603,6 +785,7 @@ function getCurrentUserFullName() {
 export function useNotifications() {
   return useQuery({
     queryKey: ["notifications"],
+    refetchInterval: 10000,
     queryFn: async (): Promise<NotificationRow[]> => {
       const list = (await callApi("getNotifications")) as NotificationRow[];
       const activeRole =
@@ -612,6 +795,7 @@ export function useNotifications() {
       const userFullName = getCurrentUserFullName();
 
       return list.filter((n) => {
+        if (n.assigned_to && n.assigned_to === userFullName) return true;
         if (n.role === "all") return true;
         if (n.role === activeRole) {
           if (activeRole === "sales_executive" && n.assigned_to && n.assigned_to !== userFullName) {
@@ -629,6 +813,7 @@ export function useNotifications() {
 export function useFollowups() {
   return useQuery({
     queryKey: ["followups"],
+    refetchInterval: 10000,
     queryFn: async (): Promise<FollowupRow[]> => {
       const list = (await callApi("getFollowups")) as any[];
       const customers = (await callApi("getLeads")) as Customer[];
@@ -744,6 +929,34 @@ export function useCRMUsers() {
     queryKey: ["crm-users"],
     queryFn: async () => {
       return callApi("getCRMUsers") as Promise<CRMUser[]>;
+    },
+  });
+}
+
+/**
+ * For manager-role users: fetches the IDs of all CRM users whose
+ * manager_id metadata matches the given managerId.
+ *
+ * Pass the result as `teamMemberIds` to isLeadVisible() to replace the
+ * old hardcoded TEAM_MEMBERS map.
+ *
+ * Always includes the manager's own ID in the result (managers can see their own leads).
+ */
+export function useTeamMemberIds(managerId: string | null) {
+  return useQuery({
+    queryKey: ["team-member-ids", managerId],
+    enabled: !!managerId,
+    staleTime: 5 * 60 * 1000, // 5 min — team composition doesn't change often
+    queryFn: async () => {
+      if (!managerId) return [managerId];
+      const users = (await callApi("getCRMUsers")) as CRMUser[];
+      // Filter sales executives whose manager_id matches this manager
+      const teamIds = users
+        .filter((u) => (u as any).manager_id === managerId || u.role === "sales_executive")
+        .map((u) => u.id);
+      // Always include the manager themselves
+      const all = new Set([managerId, ...teamIds]);
+      return Array.from(all);
     },
   });
 }
@@ -994,4 +1207,516 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
 export async function updateUserProfile(name: string, phone: string) {
   return callApi("updateUserProfile", { name, phone });
+}
+
+export function useProjectConfigurations(projectId: string) {
+  return useQuery({
+    queryKey: ["project-configurations", projectId],
+    queryFn: async (): Promise<any[]> => {
+      if (!projectId) return [];
+      return callApi("getProjectConfigurations", { projectId });
+    },
+    enabled: !!projectId,
+  });
+}
+
+export async function addProjectConfiguration(projectId: string, name: string) {
+  return callApi("addProjectConfiguration", { projectId, name });
+}
+
+export async function deleteProjectConfiguration(id: string, force?: boolean) {
+  return callApi("deleteProjectConfiguration", { id, force });
+}
+
+export async function addLeadInteraction(
+  leadId: string,
+  interaction: {
+    type: string;
+    direction?: string;
+    summary: string;
+    details?: string;
+    next_followup?: string | null;
+    followup_title?: string | null;
+    followup_priority?: string;
+    outcome?: string;
+  },
+) {
+  return callApi("addLeadInteraction", { leadId, interaction });
+}
+
+// ----------------------------------------------------
+// INVOICE CMS TYPES & REACT QUERY HOOKS
+// ----------------------------------------------------
+export interface InvoiceCompanyInfo {
+  company_name: string;
+  logo_url: string;
+  registered_address: string;
+  branch_address: string;
+  phone: string;
+  email: string;
+  website: string;
+  gst_number: string;
+  pan_number: string;
+  cin: string;
+  rera_number: string;
+  address?: string;
+  gstin?: string;
+}
+
+export interface InvoiceBankingDetails {
+  bank_name: string;
+  account_holder: string;
+  account_number: string;
+  ifsc_code: string;
+  branch_name: string;
+  upi_id: string;
+  qr_code_url: string;
+}
+
+export interface InvoiceTaxStatutory {
+  gst_enabled: boolean;
+  cgst_rate: number;
+  sgst_rate: number;
+  igst_rate: number;
+  tds_enabled: boolean;
+  tds_rate: number;
+  pf_enabled: boolean;
+  pf_code: string;
+  esi_enabled: boolean;
+  esi_code: string;
+  statutory_notes: string;
+}
+
+export interface InvoiceNotes {
+  payment_instructions: string;
+  terms_and_conditions: string;
+  cancellation_policy: string;
+  refund_policy: string;
+  late_payment_policy: string;
+  legal_disclaimer: string;
+  thank_you_message: string;
+  customer_support: string;
+}
+
+export interface InvoiceBranding {
+  logo_url: string;
+  header_style: "modern" | "classic" | "minimalist" | "luxury";
+  footer_info: string;
+  signature_title: string;
+  signatory_name: string;
+  signature_image_url: string;
+  seal_image_url: string;
+  primary_color: string;
+  secondary_color: string;
+  text_color: string;
+  authorized_signatory?: string;
+  company_seal_url?: string;
+}
+
+export interface InvoiceNumbering {
+  prefix: string;
+  suffix: string;
+  start_sequence: number;
+  padding: number;
+  auto_increment: boolean;
+}
+
+export interface InvoicePaymentInfo {
+  accepted_methods: string[];
+  payment_due_instructions: string;
+  offline_instructions: string;
+  qr_instructions: string;
+}
+
+export interface InvoiceSettings {
+  id: string;
+  company_info: InvoiceCompanyInfo;
+  banking_details: InvoiceBankingDetails;
+  tax_statutory: InvoiceTaxStatutory;
+  invoice_notes: InvoiceNotes;
+  branding: InvoiceBranding;
+  numbering: InvoiceNumbering;
+  payment_info: InvoicePaymentInfo;
+  default_template_id: string;
+  updated_at?: string;
+  updated_by?: string;
+}
+
+export interface InvoiceRolePermission {
+  role: AppRole;
+  can_view_cms: boolean;
+  can_edit_company_info: boolean;
+  can_update_banking: boolean;
+  can_modify_tax: boolean;
+  can_edit_terms: boolean;
+  can_change_branding: boolean;
+  can_manage_templates: boolean;
+  can_generate_invoices: boolean;
+  can_regenerate_invoices: boolean;
+  updated_at?: string;
+  updated_by?: string;
+}
+
+export function useInvoiceSettings() {
+  return useQuery({
+    queryKey: ["invoice-settings"],
+    queryFn: async (): Promise<InvoiceSettings> => {
+      return callApi("getInvoiceSettings");
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpdateInvoiceSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      settings,
+      sectionName,
+    }: {
+      settings: InvoiceSettings;
+      sectionName?: string;
+    }) => {
+      return callApi("updateInvoiceSettings", { settings, sectionName });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoice-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+export function useInvoicePermissions() {
+  return useQuery({
+    queryKey: ["invoice-permissions"],
+    queryFn: async (): Promise<InvoiceRolePermission[]> => {
+      return callApi("getInvoicePermissions");
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpdateInvoicePermissions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (matrix: InvoiceRolePermission[]) => {
+      return callApi("updateInvoicePermissions", { matrix });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoice-permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+export function usePostSalesOperations() {
+  return useQuery({
+    queryKey: ["post-sales-ops"],
+    queryFn: async () => {
+      return callApi("getPostSalesOperations");
+    },
+    staleTime: 1000 * 30,
+  });
+}
+
+export function useUpdateRegistration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: any) => {
+      return callApi("updateRegistration", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["post-sales-ops"] });
+      qc.invalidateQueries({ queryKey: ["bookings"] });
+    },
+  });
+}
+
+export function useUpdatePossession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: any) => {
+      return callApi("updatePossession", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["post-sales-ops"] });
+      qc.invalidateQueries({ queryKey: ["bookings"] });
+    },
+  });
+}
+
+export function useSavePaymentSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { bookingId: string; milestones: any[] }) => {
+      return callApi("savePaymentSchedule", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["post-sales-ops"] });
+      qc.invalidateQueries({ queryKey: ["bookings"] });
+    },
+  });
+}
+
+export function useProcessRefund() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: any) => {
+      return callApi("processRefund", payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["post-sales-ops"] });
+      qc.invalidateQueries({ queryKey: ["bookings"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
+
+export interface UserInvoicePermission {
+  user_id: string;
+  user_name: string;
+  role: AppRole;
+  can_view_cms: boolean;
+  can_edit_company_info: boolean;
+  can_update_banking: boolean;
+  can_modify_tax: boolean;
+  can_edit_terms: boolean;
+  can_change_branding: boolean;
+  can_manage_templates: boolean;
+  can_generate_invoices: boolean;
+  can_regenerate_invoices: boolean;
+}
+
+export function useUserInvoicePermissions() {
+  return useQuery({
+    queryKey: ["user-invoice-permissions"],
+    queryFn: async (): Promise<UserInvoicePermission[]> => {
+      return callApi("getUserInvoicePermissions");
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpdateUserInvoicePermissions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (userPermissions: UserInvoicePermission[]) => {
+      return callApi("updateUserInvoicePermissions", { userPermissions });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-invoice-permissions"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+// ----------------------------------------------------
+// Lead Assignment Engine Interfaces & React Query Hooks
+// ----------------------------------------------------
+
+export interface LeadAssignmentSettings {
+  id: string;
+  distribution_strategy:
+    | "round_robin"
+    | "project_based"
+    | "source_based"
+    | "manual"
+    | "capacity_based";
+  auto_assign_leads: boolean;
+  skip_paused_users: boolean;
+  skip_inactive_users: boolean;
+  enable_project_routing: boolean;
+  enable_source_routing: boolean;
+  allow_manager_override: boolean;
+  maintain_assignment_history: boolean;
+  source_routes: Record<string, string>;
+  sla_first_contact_mins: number;
+  sla_manager_escalate_hours: number;
+  sla_auto_reassign_hours: number;
+  last_assigned_index_map: Record<string, number>;
+  updated_at?: string;
+  updated_by?: string;
+}
+
+export interface LeadAssignmentHistory {
+  id: string;
+  lead_id: string;
+  previous_owner: string;
+  assigned_owner: string;
+  strategy_used: string;
+  reason: string;
+  assigned_by: string;
+  created_at: string;
+}
+
+export function useLeadAssignmentSettings() {
+  return useQuery({
+    queryKey: ["lead-assignment-settings"],
+    queryFn: async (): Promise<LeadAssignmentSettings> => {
+      return callApi("getLeadAssignmentSettings");
+    },
+  });
+}
+
+export function useUpdateLeadAssignmentSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (updates: Partial<LeadAssignmentSettings>) => {
+      return callApi("updateLeadAssignmentSettings", { updates });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lead-assignment-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+export function useLeadAssignmentHistory(leadId: string) {
+  return useQuery({
+    queryKey: ["lead-assignment-history", leadId],
+    queryFn: async (): Promise<LeadAssignmentHistory[]> => {
+      if (!leadId) return [];
+      const res = await callApi("getLeadAssignmentHistory", { leadId });
+      return Array.isArray(res) ? res : [];
+    },
+    enabled: !!leadId,
+  });
+}
+
+export function useUpdateUserAssignmentStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      assignment_status,
+      assigned_projects,
+    }: {
+      id: string;
+      assignment_status?: "available" | "paused" | "inactive";
+      assigned_projects?: string[];
+    }) => {
+      return callApi("updateUserAssignmentStatus", { id, assignment_status, assigned_projects });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["crm-users"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+export function useReassignLeadWithEngine() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      leadId,
+      newOwner,
+      reason,
+      strategy,
+    }: {
+      leadId: string;
+      newOwner?: string;
+      reason?: string;
+      strategy?: string;
+    }) => {
+      return callApi("reassignLeadWithEngine", { leadId, newOwner, reason, strategy });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["lead-assignment-history", variables.leadId] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+// ── Negotiation API Wrappers & Hooks ─────────────────────────
+export async function getNegotiation(opportunityId: string) {
+  return callApi("getNegotiation", { opportunityId });
+}
+
+export async function updateNegotiation(opportunityId: string, updates: any, newRound?: any) {
+  return callApi("updateNegotiation", { opportunityId, updates, newRound });
+}
+
+export async function addNegotiationRound(opportunityId: string, round: any) {
+  return callApi("addNegotiationRound", { opportunityId, round });
+}
+
+export async function respondManagerApproval(
+  opportunityId: string,
+  decision: string,
+  suggestedAmount?: number,
+  notes?: string,
+) {
+  return callApi("respondManagerApproval", { opportunityId, decision, suggestedAmount, notes });
+}
+
+export function useNegotiation(opportunityId?: string) {
+  return useQuery({
+    queryKey: ["negotiation", opportunityId],
+    queryFn: async () => {
+      if (!opportunityId) return null;
+      return callApi("getNegotiation", { opportunityId }) as Promise<any>;
+    },
+    enabled: !!opportunityId,
+  });
+}
+
+export function useUpdateNegotiation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      opportunityId,
+      updates,
+      newRound,
+    }: {
+      opportunityId: string;
+      updates: any;
+      newRound?: any;
+    }) => {
+      return updateNegotiation(opportunityId, updates, newRound);
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["negotiation", variables.opportunityId] });
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+export function useAddNegotiationRound() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ opportunityId, round }: { opportunityId: string; round: any }) => {
+      return addNegotiationRound(opportunityId, round);
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["negotiation", variables.opportunityId] });
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
+
+export function useRespondManagerApproval() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      opportunityId,
+      decision,
+      suggestedAmount,
+      notes,
+    }: {
+      opportunityId: string;
+      decision: string;
+      suggestedAmount?: number;
+      notes?: string;
+    }) => {
+      return respondManagerApproval(opportunityId, decision, suggestedAmount, notes);
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["negotiation", variables.opportunityId] });
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
 }

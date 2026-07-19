@@ -25,7 +25,12 @@ export function getSupabaseClient() {
 }
 
 // Replicated publishEvent helper to make lead-service.ts self-contained and identical to crm.ts behavior
-export async function publishEvent(type: string, customerId: string, payload: any, actorName: string) {
+export async function publishEvent(
+  type: string,
+  customerId: string,
+  payload: any,
+  actorName: string,
+) {
   const supabase = getSupabaseClient();
   const now = new Date().toISOString();
   let timelineMsg = "";
@@ -173,7 +178,7 @@ export async function addLeadInternal(
     city?: string;
   },
   actorName: string,
-  options?: AddLeadOptions
+  options?: AddLeadOptions,
 ) {
   const supabase = getSupabaseClient();
   const digits = lead.phone.replace(/\D/g, "");
@@ -210,7 +215,7 @@ export async function addLeadInternal(
       // Manual creation throws duplicate error (original behavior)
       return {
         error: `DUPLICATE_DETECTED:${dupCheck.id}:${dupCheck.name}:${oppOwner}`,
-        statusCode: 400
+        statusCode: 400,
       };
     } else {
       // Webhook ingestion resolves duplicates gracefully by updating timeline and meta information
@@ -238,11 +243,11 @@ export async function addLeadInternal(
         .select("timeline")
         .eq("id", dupCheck.id)
         .single();
-      
+
       const timeline = currentTimeline.data?.timeline || [];
       timeline.push({
         title: `Duplicate Lead submission via Meta Lead Ads (Form: ${options.metaMetadata?.form_name || "Unknown"})`,
-        time: new Date().toISOString()
+        time: new Date().toISOString(),
       });
 
       await supabase.from("customers").update({ timeline }).eq("id", dupCheck.id);
@@ -251,7 +256,7 @@ export async function addLeadInternal(
         success: true,
         isDuplicate: true,
         customerId: dupCheck.id,
-        opportunityId: opportunity?.id || null
+        opportunityId: opportunity?.id || null,
       };
     }
   }
@@ -301,27 +306,43 @@ export async function addLeadInternal(
     return { error: oErr.message, statusCode: 400 };
   }
 
-  // 6. Set active opportunity id on customer
+  // 6. Execute Central Lead Assignment Engine
+  try {
+    const { executeLeadAssignmentEngine } = await import("./lead-assignment-engine.js");
+    const assignmentResult = await executeLeadAssignmentEngine({
+      leadId: dbCustomer.id,
+      leadName: dbCustomer.name,
+      source: dbCustomer.source,
+      projectId: dbOpportunity.project_id,
+      previousOwner: "Unassigned",
+      manualOwnerOverride: lead.owner && lead.owner !== "Unassigned" ? lead.owner : undefined,
+      actorName,
+    });
+
+    if (assignmentResult.assignedOwner && assignmentResult.assignedOwner !== "Unassigned") {
+      dbOpportunity.owner = assignmentResult.assignedOwner;
+      dbOpportunity.stage = "assigned";
+    }
+  } catch (assignErr) {
+    console.error("Failed to run Lead Assignment Engine:", assignErr);
+  }
+
+  // 7. Set active opportunity id on customer
   await supabase
     .from("customers")
     .update({ activeOpportunityId: dbOpportunity.id })
     .eq("id", dbCustomer.id);
 
-  // 7. Publish creation event
-  await publishEvent(
-    "CUSTOMER_CREATED",
-    dbCustomer.id,
-    { source: dbCustomer.source },
-    actorName
-  );
+  // 8. Publish creation event
+  await publishEvent("CUSTOMER_CREATED", dbCustomer.id, { source: dbCustomer.source }, actorName);
 
-  // 8. Publish assignment event if owner is assigned
+  // 9. Publish assignment event if owner is assigned
   if (dbOpportunity.owner !== "Unassigned") {
     await publishEvent(
       "OPPORTUNITY_ASSIGNED",
       dbCustomer.id,
       { owner: dbOpportunity.owner, oldOwner: "Unassigned" },
-      actorName
+      actorName,
     );
   }
 
@@ -339,6 +360,6 @@ export async function addLeadInternal(
           projectId: dbOpportunity.project_id,
         },
       ],
-    }
+    },
   };
 }

@@ -76,7 +76,7 @@ export default async function handler(req: any, res: any) {
     try {
       const graphCheckUrl = `https://graph.facebook.com/${graphVersion}/me?access_token=${accessToken}`;
       const graphResponse = await fetch(graphCheckUrl);
-      
+
       if (!graphResponse.ok) {
         graphApiStatus = "error";
         const errJson = await graphResponse.json().catch(() => ({}));
@@ -87,7 +87,8 @@ export default async function handler(req: any, res: any) {
       tokenErrorMessage = graphErr.message;
     }
 
-    const overallStatus = graphApiStatus === "reachable" && failedToday === 0 ? "healthy" : "degraded";
+    const overallStatus =
+      graphApiStatus === "reachable" && failedToday === 0 ? "healthy" : "degraded";
 
     return res.status(200).json({
       status: overallStatus,
@@ -101,7 +102,6 @@ export default async function handler(req: any, res: any) {
       lastError: lastLog && lastLog.status === "FAILED" ? lastLog.error_message : null,
       timestamp: new Date().toISOString(),
     });
-
   } catch (error: any) {
     console.error("Health endpoint error:", error.message);
     return res.status(500).json({

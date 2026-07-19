@@ -54,13 +54,16 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
   }, [role, user]);
 
   const sourcesList = settings?.lead_sources || [
-    "Website",
-    "Instagram",
-    "Facebook",
-    "WhatsApp",
-    "Walk-in",
-    "Referral",
-    "Landing Page",
+    "Website Forms",
+    "Landing Pages",
+    "Facebook Leads",
+    "Instagram Leads",
+    "Meta Lead Ads",
+    "WhatsApp Leads",
+    "Manual Entry",
+    "Walk-in Customers",
+    "Referral Leads",
+    "Direct Phone Calls",
   ];
 
   const resetForm = () => {

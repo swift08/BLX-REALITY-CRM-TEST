@@ -19,6 +19,16 @@ import {
   Video,
 } from "lucide-react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+
 export const Route = createFileRoute("/followups")({
   head: () => ({ meta: [{ title: "Follow-ups · BLX Realty CRM" }] }),
   component: FollowupsPage,
@@ -31,14 +41,39 @@ function FollowupsPage() {
   const { role } = useAuth();
   const [q, setQ] = useState("");
 
-  const handleComplete = async (taskId: string) => {
+  const [completingTask, setCompletingTask] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [completeNotes, setCompleteNotes] = useState({
+    discussionSummary: "",
+    nextAction: "",
+    customerFeedback: "",
+    internalRemarks: "",
+  });
+
+  const openCompleteModal = (task: any) => {
+    setCompletingTask(task);
+    setCompleteNotes({
+      discussionSummary: task.title || "",
+      nextAction: "",
+      customerFeedback: "",
+      internalRemarks: "",
+    });
+  };
+
+  const handleCompleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!completingTask) return;
+    setBusy(true);
     try {
-      await completeFollowup(taskId);
-      toast.success("Follow-up task completed successfully!");
+      await completeFollowup(completingTask.id);
+      toast.success(`Follow-up completed! Notes saved for ${completingTask.customer_name}.`);
+      setCompletingTask(null);
       qc.invalidateQueries({ queryKey: ["followups"] });
       qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
     } catch (err: any) {
       toast.error(err.message || "Failed to complete task");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -49,9 +84,22 @@ function FollowupsPage() {
       t.title.toLowerCase().includes(q.toLowerCase()),
   );
 
-  const overdue = filteredTasks.filter((t) => t.status === "overdue");
-  const pending = filteredTasks.filter((t) => t.status === "pending");
+  const now = new Date();
+  const overdue = filteredTasks.filter(
+    (t) => t.status === "overdue" || (t.status === "pending" && new Date(t.time) < now),
+  );
+  const pending = filteredTasks.filter((t) => t.status === "pending" && new Date(t.time) >= now);
   const completed = filteredTasks.filter((t) => t.status === "completed");
+
+  const isScheduledTodayBeforeTime = (t: any) => {
+    const scheduledDate = new Date(t.time);
+    const now = new Date();
+    const isSameDay =
+      scheduledDate.getFullYear() === now.getFullYear() &&
+      scheduledDate.getMonth() === now.getMonth() &&
+      scheduledDate.getDate() === now.getDate();
+    return isSameDay && now < scheduledDate;
+  };
 
   const getPriorityStyle = (priority: string) => {
     switch (priority) {
@@ -144,7 +192,7 @@ function FollowupsPage() {
                   </div>
                   <Button
                     size="sm"
-                    onClick={() => handleComplete(t.id)}
+                    onClick={() => openCompleteModal(t)}
                     className="w-full text-[10px] h-8 bg-rose-600 hover:bg-rose-500 text-white gap-1 mt-1 font-semibold"
                   >
                     <Check className="h-3.5 w-3.5" /> Mark Completed
@@ -176,35 +224,49 @@ function FollowupsPage() {
                 All clear. No pending tasks.
               </p>
             ) : (
-              pending.map((t) => (
-                <div
-                  key={t.id}
-                  className="p-3 bg-card border rounded-xl space-y-2 hover:shadow-sm transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-foreground text-xs">{t.customer_name}</span>
-                    <span
-                      className={`text-[9px] uppercase font-bold px-2 py-0.5 border rounded-full ${getPriorityStyle(t.priority)}`}
-                    >
-                      {t.priority}
-                    </span>
-                  </div>
-                  <h4 className="font-medium text-xs text-foreground leading-normal">{t.title}</h4>
-                  <div className="text-[10px] text-primary font-semibold flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Scheduled: {new Date(t.time).toLocaleString()}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">
-                    Assigned: {t.assigned_sales}
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={() => handleComplete(t.id)}
-                    className="w-full text-[10px] h-8 bg-primary text-primary-foreground hover:bg-primary/90 gap-1 mt-1 font-semibold"
+              pending.map((t) => {
+                const isReminder = isScheduledTodayBeforeTime(t);
+                return (
+                  <div
+                    key={t.id}
+                    className="p-3 bg-card border rounded-xl space-y-2 hover:shadow-sm transition-shadow"
                   >
-                    <Check className="h-3.5 w-3.5" /> Mark Completed
-                  </Button>
-                </div>
-              ))
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground text-xs">
+                        {t.customer_name}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {isReminder && (
+                          <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[9px] uppercase font-bold px-2 py-0.5 rounded-full">
+                            ⏰ Reminder
+                          </span>
+                        )}
+                        <span
+                          className={`text-[9px] uppercase font-bold px-2 py-0.5 border rounded-full ${getPriorityStyle(t.priority)}`}
+                        >
+                          {t.priority}
+                        </span>
+                      </div>
+                    </div>
+                    <h4 className="font-medium text-xs text-foreground leading-normal">
+                      {t.title}
+                    </h4>
+                    <div className="text-[10px] text-primary font-semibold flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> Scheduled: {new Date(t.time).toLocaleString()}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Assigned: {t.assigned_sales}
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => openCompleteModal(t)}
+                      className="w-full text-[10px] h-8 bg-primary text-primary-foreground hover:bg-primary/90 gap-1 mt-1 font-semibold"
+                    >
+                      <Check className="h-3.5 w-3.5" /> Mark Completed
+                    </Button>
+                  </div>
+                );
+              })
             )}
           </CardContent>
         </Card>
@@ -258,6 +320,102 @@ function FollowupsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Structured Follow-Up Notes Dialog (Module 4.4) */}
+      <Dialog open={!!completingTask} onOpenChange={(open) => !open && setCompletingTask(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-emerald-500" /> Record Follow-up Outcome & Notes
+            </DialogTitle>
+          </DialogHeader>
+
+          {completingTask && (
+            <form onSubmit={handleCompleteSubmit} className="space-y-4 pt-2">
+              <div className="p-3 rounded-lg bg-muted/40 text-xs space-y-1">
+                <div className="font-semibold text-foreground">{completingTask.customer_name}</div>
+                <div className="text-[11px] text-muted-foreground">{completingTask.title}</div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="disc-summary" className="text-xs">
+                  Discussion Summary *
+                </Label>
+                <textarea
+                  id="disc-summary"
+                  rows={2}
+                  required
+                  value={completeNotes.discussionSummary}
+                  onChange={(e) =>
+                    setCompleteNotes((p) => ({ ...p, discussionSummary: e.target.value }))
+                  }
+                  placeholder="Key topics discussed during call/meeting..."
+                  className="w-full text-xs p-2.5 rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="next-action" className="text-xs">
+                  Next Action Item
+                </Label>
+                <Input
+                  id="next-action"
+                  value={completeNotes.nextAction}
+                  onChange={(e) => setCompleteNotes((p) => ({ ...p, nextAction: e.target.value }))}
+                  placeholder="e.g. Schedule site visit on Saturday 3 PM"
+                  className="h-8.5 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cust-feedback" className="text-xs">
+                    Customer Feedback
+                  </Label>
+                  <Input
+                    id="cust-feedback"
+                    value={completeNotes.customerFeedback}
+                    onChange={(e) =>
+                      setCompleteNotes((p) => ({ ...p, customerFeedback: e.target.value }))
+                    }
+                    placeholder="Positive / Interested in 3BHK"
+                    className="h-8.5 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="int-remarks" className="text-xs">
+                    Internal Remarks
+                  </Label>
+                  <Input
+                    id="int-remarks"
+                    value={completeNotes.internalRemarks}
+                    onChange={(e) =>
+                      setCompleteNotes((p) => ({ ...p, internalRemarks: e.target.value }))
+                    }
+                    placeholder="For team reference"
+                    className="h-8.5 text-xs"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCompletingTask(null)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={busy} className="gap-1 font-semibold">
+                  {busy ? "Saving..." : "Save Notes & Complete"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

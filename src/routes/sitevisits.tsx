@@ -1,10 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useFollowups, useLeads, useCalendarEvents, useCRMUsers } from "@/lib/queries";
+import {
+  useFollowups,
+  useLeads,
+  useCalendarEvents,
+  useCRMUsers,
+  updateCalendarEvent,
+  completeFollowup,
+} from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
+import { toast } from "sonner";
 import {
   Calendar as CalendarIcon,
   Phone,
@@ -15,6 +24,7 @@ import {
   Clock,
   User,
   Badge,
+  Check,
 } from "lucide-react";
 
 export const Route = createFileRoute("/sitevisits")({
@@ -25,6 +35,7 @@ export const Route = createFileRoute("/sitevisits")({
 type CalendarView = "month" | "week" | "agenda";
 
 function CalendarPage() {
+  const queryClient = useQueryClient();
   const { user, role } = useAuth();
   const { data: followups = [], isLoading } = useFollowups();
   const { data: leads = [] } = useLeads();
@@ -32,6 +43,32 @@ function CalendarPage() {
   const { data: crmUsers = [] } = useCRMUsers();
   const [currentView, setCurrentView] = useState<CalendarView>("agenda");
   const [selectedDate, setSelectedDate] = useState(new Date());
+
+  const handleMarkDone = async (ev: any) => {
+    try {
+      if (ev.source === "followup") {
+        await completeFollowup(ev.id);
+        toast.success("Follow-up marked as completed!");
+      } else {
+        await updateCalendarEvent(ev.id, {
+          type: ev.type || "visit",
+          title: ev.title,
+          start: ev.time.toISOString(),
+          end: new Date(ev.time.getTime() + 60 * 60 * 1000).toISOString(),
+          customerId: ev.leadId || null,
+          salesPerson: ev.assigned_sales === "unassigned" ? null : ev.assigned_sales,
+          details: ev.details || "",
+          status: "completed",
+        });
+        toast.success("Site visit marked as completed!");
+      }
+      queryClient.invalidateQueries({ queryKey: ["followups"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to mark as done");
+    }
+  };
 
   const [simulateSalesPerson, setSimulateSalesPerson] = useState<string>("all");
   const salesPeople = crmUsers.filter((u) => u.role === "sales_executive");
@@ -90,7 +127,7 @@ function CalendarPage() {
         title: e.title,
         time: new Date(e.start),
         priority: "medium" as const,
-        status: "pending" as const,
+        status: e.status || "pending",
         project: lead?.projects?.name || "No Project",
         // Normalise to lowercase for consistent comparison
         assigned_sales: (e.salesPerson || "Unassigned").toLowerCase().trim(),
@@ -298,6 +335,11 @@ function CalendarPage() {
                               {ev.assigned_sales}
                             </span>
                           )}
+                          {ev.status === "completed" && (
+                            <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2 py-0.25 rounded-full uppercase">
+                              Done
+                            </span>
+                          )}
                         </div>
                         <h4 className="font-medium text-xs text-foreground mt-1 leading-normal">
                           {ev.title}
@@ -311,6 +353,15 @@ function CalendarPage() {
                           <span>Project: {ev.project}</span>
                         </div>
                       </div>
+                      {ev.status !== "completed" && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleMarkDone(ev)}
+                          className="h-8 text-[10px] gap-1 font-semibold self-center"
+                        >
+                          <Check className="h-3.5 w-3.5" /> Mark Completed
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
