@@ -1567,15 +1567,16 @@ function Customer360Workspace({
           { key: "booking", label: "Booking" },
           { key: "converted", label: "Converted" },
         ].map((step, sIdx, stepsArr) => {
-          const getStageStepIndex = (st: string) => {
-            if (st === "new") return 0;
-            if (st === "assigned") return 1;
-            if (st === "connected" || st === "contact_attempted") return 2;
-            if (st === "interested") return 3;
-            if (st.includes("visit") || st.includes("meeting")) return 4;
-            if (st === "negotiation") return 5;
-            if (st.includes("booking") || st === "payment_pending") return 6;
-            if (st === "converted" || st === "payment_completed") return 7;
+          const getStageStepIndex = (st: string | null | undefined) => {
+            const s = (st || "").toString();
+            if (s === "new") return 0;
+            if (s === "assigned") return 1;
+            if (s === "connected" || s === "contact_attempted") return 2;
+            if (s === "interested") return 3;
+            if (s.includes("visit") || s.includes("meeting")) return 4;
+            if (s === "negotiation") return 5;
+            if (s.includes("booking") || s === "payment_pending") return 6;
+            if (s === "converted" || s === "payment_completed") return 7;
             return 0;
           };
 
@@ -1756,7 +1757,7 @@ function Customer360Workspace({
                   value="opportunities"
                   className="h-12 border-b-2 border-transparent data-[state=active]:border-primary rounded-none px-0 text-xs font-semibold bg-transparent data-[state=active]:bg-transparent"
                 >
-                  Opportunities ({customer.opportunities.length})
+                  Opportunities ({(customer.opportunities || []).length})
                 </TabsTrigger>
                 <TabsTrigger
                   value="timeline"
@@ -1982,7 +1983,7 @@ function Customer360Workspace({
                   </form>
 
                   <div className="space-y-2.5 mt-4">
-                    {customer.notes.map((n) => (
+                    {(customer.notes || []).map((n) => (
                       <div
                         key={n.id}
                         className={`p-3 rounded-lg border text-xs relative bg-card ${n.pinned ? "border-amber-400/40 bg-amber-500/[0.01]" : "border-border/60"}`}
@@ -2019,7 +2020,7 @@ function Customer360Workspace({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {customer.opportunities.map((opp, idx) => {
+                  {(customer.opportunities || []).map((opp, idx) => {
                     const proj = projects.find((p) => p.id === opp.projectId);
                     const isActive = opp.id === customer.activeOpportunityId;
                     return (
@@ -3491,7 +3492,7 @@ function Customer360Workspace({
                     Customer Attachments Registry
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {customer.documents.map((doc, idx) => (
+                    {(customer.documents || []).map((doc, idx) => (
                       <div
                         key={idx}
                         className="p-3 border border-border/60 rounded-xl bg-card flex items-center justify-between gap-3"
@@ -3519,7 +3520,7 @@ function Customer360Workspace({
                         </a>
                       </div>
                     ))}
-                    {customer.documents.length === 0 && (
+                    {(!customer.documents || customer.documents.length === 0) && (
                       <p className="text-xs text-muted-foreground">No files uploaded.</p>
                     )}
                   </div>
@@ -3554,10 +3555,10 @@ function Customer360Workspace({
                         {auditLogs
                           .filter(
                             (log) =>
-                              log.new_value.includes(customer.name) ||
-                              log.old_value.includes(customer.name) ||
-                              log.new_value.includes(customer.id) ||
-                              log.action.includes(customer.id),
+                              (log.new_value || "").includes(customer.name || "") ||
+                              (log.old_value || "").includes(customer.name || "") ||
+                              (log.new_value || "").includes(customer.id || "") ||
+                              (log.action || "").includes(customer.id || ""),
                           )
                           .map((log) => (
                             <tr key={log.id}>

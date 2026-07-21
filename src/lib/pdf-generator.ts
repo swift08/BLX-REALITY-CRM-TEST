@@ -742,6 +742,13 @@ export async function generatePaymentReceiptPdf(
   </div>
   `;
 
+  await downloadHtmlAsPdf(htmlStr, `Payment_Receipt_${data.receiptNumber}.pdf`);
+}
+
+/**
+ * Utility helper to convert HTML container off-screen to PDF and trigger instant browser download.
+ */
+export async function downloadHtmlAsPdf(htmlStr: string, fileName: string) {
   const container = document.createElement("div");
   container.style.position = "fixed";
   container.style.left = "-9999px";
@@ -760,6 +767,20 @@ export async function generatePaymentReceiptPdf(
       useCORS: true,
       logging: false,
       backgroundColor: "#ffffff",
+      onclone: (clonedDoc) => {
+        // Remove style elements that contain unsupported oklch color rules causing html2canvas to crash
+        const styles = clonedDoc.querySelectorAll("style");
+        styles.forEach((s) => {
+          if (s.textContent?.includes("oklch")) {
+            s.remove();
+          }
+        });
+        // Reset root style attributes if any contain oklch
+        const root = clonedDoc.documentElement;
+        if (root && root.getAttribute("style")?.includes("oklch")) {
+          root.removeAttribute("style");
+        }
+      },
     });
 
     const imgData = canvas.toDataURL("image/png");
@@ -773,11 +794,11 @@ export async function generatePaymentReceiptPdf(
     const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
     pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-
-    const fileName = `Payment_Receipt_${data.receiptNumber}.pdf`;
     pdf.save(fileName);
   } finally {
-    document.body.removeChild(container);
+    if (document.body.contains(container)) {
+      document.body.removeChild(container);
+    }
   }
 }
 
@@ -1036,42 +1057,4 @@ export async function downloadRefundReceiptPdf(data: any, settings?: InvoiceSett
   `;
 
   await downloadHtmlAsPdf(htmlStr, `Refund_Voucher_${data.voucherNumber}.pdf`);
-}
-
-async function downloadHtmlAsPdf(htmlStr: string, fileName: string) {
-  const container = document.createElement("div");
-  container.style.position = "fixed";
-  container.style.left = "-9999px";
-  container.style.top = "0";
-  container.style.width = "794px";
-  container.style.backgroundColor = "#ffffff";
-
-  container.innerHTML = htmlStr;
-  document.body.appendChild(container);
-
-  try {
-    await new Promise((r) => setTimeout(r, 250));
-
-    const canvas = await html2canvas(container, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: "#ffffff",
-    });
-
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-    });
-
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save(fileName);
-  } finally {
-    document.body.removeChild(container);
-  }
 }
