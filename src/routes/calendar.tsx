@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -117,9 +117,9 @@ const EVENT_STYLES = {
 type EvType = keyof typeof EVENT_STYLES;
 type ViewMode = "weekly" | "monthly" | "daily" | "timeline";
 
-// Time Slots from 8 AM to 8 PM
-const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-const HOUR_SLOT_HEIGHT = 72; // height in pixels per 1-hour slot
+// 24-Hour Time Slots from 12 AM (00:00) to 11 PM (23:00)
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const HOUR_SLOT_HEIGHT = 68; // height in pixels per 1-hour slot
 
 function fmtTime12(dateObj: Date) {
   return dateObj.toLocaleTimeString("en-US", {
@@ -170,6 +170,14 @@ function BusinessCalendar() {
   const [viewEv, setViewEv] = useState<any>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Auto-scroll weekly view to ~7:00 AM for convenient view
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (viewMode === "weekly" && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 7 * HOUR_SLOT_HEIGHT;
+    }
+  }, [viewMode]);
 
   // Today helpers
   const todayISO = fmtDateISO(new Date());
@@ -545,17 +553,17 @@ function BusinessCalendar() {
             </div>
 
             {/* Time Grid Scrollable Body */}
-            <div className="overflow-y-auto max-h-[680px] relative">
+            <div ref={scrollContainerRef} className="overflow-y-auto max-h-[680px] relative">
               <div className="grid grid-cols-8 relative">
-                {/* Y-Axis Hours Column */}
+                {/* Y-Axis Hours Column (12 AM to 11 PM) */}
                 <div className="border-r border-border bg-card">
                   {HOURS.map((h) => {
-                    const label = h === 12 ? "12 PM" : h > 12 ? `${h - 12} PM` : `${h} AM`;
+                    const label = h === 0 ? "12 AM" : h === 12 ? "12 PM" : h > 12 ? `${h - 12} PM` : `${h} AM`;
                     return (
                       <div
                         key={h}
                         style={{ height: HOUR_SLOT_HEIGHT }}
-                        className="p-2 border-b border-border/40 text-[11px] font-bold text-muted-foreground text-right pr-3"
+                        className="p-2 border-b border-border/40 text-[11px] font-bold text-muted-foreground text-right pr-3 flex items-start justify-end pt-1"
                       >
                         {label}
                       </div>
@@ -570,7 +578,7 @@ function BusinessCalendar() {
                   return (
                     <div
                       key={wd.iso}
-                      className={`border-r last:border-r-0 border-border/40 relative min-h-[936px] ${
+                      className={`border-r last:border-r-0 border-border/40 relative min-h-[1632px] ${
                         wd.isSelected ? "bg-purple-500/[0.03]" : ""
                       }`}
                     >
@@ -588,16 +596,15 @@ function BusinessCalendar() {
                       {dayEvents.map((ev) => {
                         const styleCfg = EVENT_STYLES[ev.type as EvType] || EVENT_STYLES.meeting;
 
-                        // Calculate vertical position from start time
+                        // Calculate vertical position relative to 12 AM (00:00)
                         const startDate = new Date(ev.start);
                         const endDate = new Date(ev.end);
                         const startHour = startDate.getHours() + startDate.getMinutes() / 60;
                         const endHour = endDate.getHours() + endDate.getMinutes() / 60;
                         const duration = Math.max(0.5, endHour - startHour);
 
-                        // Offset relative to 8 AM
-                        const topPx = Math.max(0, (startHour - 8) * HOUR_SLOT_HEIGHT);
-                        const heightPx = Math.max(52, duration * HOUR_SLOT_HEIGHT - 6);
+                        const topPx = Math.max(0, startHour * HOUR_SLOT_HEIGHT);
+                        const heightPx = Math.max(54, duration * HOUR_SLOT_HEIGHT - 4);
 
                         return (
                           <div
@@ -611,37 +618,35 @@ function BusinessCalendar() {
                               setViewEv(ev);
                               setIsViewOpen(true);
                             }}
-                            className={`absolute left-1 right-1 p-2.5 rounded-2xl shadow-md cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg flex flex-col justify-between overflow-hidden z-10 border border-white/20 bg-gradient-to-br ${styleCfg.bgGradient} text-white`}
+                            title={`${ev.title} (${fmtTime12(startDate)} - ${fmtTime12(endDate)}) • Rep: ${ev.salesPerson || "Unassigned"}`}
+                            className={`absolute left-1 right-1 p-2 rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02] hover:shadow-xl hover:z-30 flex flex-col justify-between overflow-hidden border border-white/25 bg-gradient-to-br ${styleCfg.bgGradient} text-white`}
                           >
-                            {/* Abstract decorative diagonal stripes */}
-                            <div className="absolute -right-4 -top-4 w-16 h-16 rounded-full bg-white/10 blur-xs pointer-events-none" />
-
-                            <div>
-                              {/* Top Tag & Time */}
-                              <div className="flex items-center justify-between gap-1 mb-1">
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-xs truncate">
-                                  {styleCfg.tagPrefix}
+                            <div className="space-y-1 min-w-0">
+                              {/* Top Row: Type Emoji + Time Badge */}
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-black/20 text-white backdrop-blur-xs truncate">
+                                  {styleCfg.emoji} {styleCfg.label}
                                 </span>
-                                <span className="text-[9px] font-bold text-white/80 shrink-0">
+                                <span className="text-[10px] font-mono font-bold text-white/95 shrink-0 bg-white/15 px-1.5 py-0.5 rounded-md">
                                   {fmtTime12(startDate)}
                                 </span>
                               </div>
 
-                              {/* Main Title */}
-                              <h4 className="text-xs font-bold leading-tight font-display drop-shadow-xs line-clamp-2">
+                              {/* Title */}
+                              <h4 className="text-xs font-bold leading-tight font-display tracking-tight drop-shadow-xs line-clamp-2 mt-0.5">
                                 {ev.title} {ev.status === "completed" && "✔️"}
                               </h4>
                             </div>
 
-                            {/* Bottom Avatar & Name (Image 1 Style) */}
-                            <div className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-white/20">
-                              <div className="h-5 w-5 rounded-full bg-white/20 flex items-center justify-center text-[9px] font-bold shrink-0">
-                                {ev.salesPerson ? ev.salesPerson.charAt(0) : "U"}
+                            {/* Rep / Owner Footer (if height is sufficient) */}
+                            {heightPx >= 72 && (
+                              <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-white/20 text-[10px] font-semibold text-white/90">
+                                <div className="h-4 w-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] font-extrabold shrink-0">
+                                  {ev.salesPerson ? ev.salesPerson.charAt(0) : "U"}
+                                </div>
+                                <span className="truncate">{ev.salesPerson || "Unassigned"}</span>
                               </div>
-                              <span className="text-[10px] font-semibold truncate text-white/90">
-                                {ev.salesPerson || "Unassigned"}
-                              </span>
-                            </div>
+                            )}
                           </div>
                         );
                       })}
