@@ -2001,19 +2001,19 @@ function ProjectsPage() {
                 <div className="flex items-center gap-2 font-semibold text-xs bg-muted/40 border px-3 py-1.5 rounded-lg shadow-sm">
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded bg-emerald-500" /> Available (
-                    {projectUnits.filter((u) => u.status === "available").length})
+                    {(projectUnits || []).filter((u) => (u?.status || "available") === "available").length})
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded bg-amber-400" /> Pending (
-                    {projectUnits.filter((u) => u.status === "pending_reserve").length})
+                    {(projectUnits || []).filter((u) => u?.status === "pending_reserve").length})
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded bg-amber-600" /> Reserved (
-                    {projectUnits.filter((u) => u.status === "reserved").length})
+                    {(projectUnits || []).filter((u) => u?.status === "reserved").length})
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded bg-rose-500" /> Sold (
-                    {projectUnits.filter((u) => u.status === "sold").length})
+                    {(projectUnits || []).filter((u) => u?.status === "sold").length})
                   </span>
                 </div>
 
@@ -2055,7 +2055,7 @@ function ProjectsPage() {
                 <div className="p-8 text-center text-xs text-muted-foreground">
                   Loading units...
                 </div>
-              ) : projectUnits.length === 0 ? (
+              ) : !projectUnits || projectUnits.length === 0 ? (
                 <div className="p-12 text-center border border-dashed rounded-xl space-y-2">
                   <Boxes className="h-8 w-8 text-muted-foreground/60 mx-auto" />
                   <h4 className="font-bold text-xs">No Units Map Created</h4>
@@ -2075,32 +2075,38 @@ function ProjectsPage() {
                       </p>
                     </div>
                     <Badge variant="outline" className="text-[10px] font-mono font-bold bg-card shrink-0">
-                      {projectUnits.filter((u) => inventoryFilter === "all" || u.status === inventoryFilter).length} Plots Shown
+                      {(projectUnits || []).filter((u) => inventoryFilter === "all" || (u?.status || "available") === inventoryFilter).length} Plots Shown
                     </Badge>
                   </div>
 
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {projectUnits
-                      .filter((u) => inventoryFilter === "all" || u.status === inventoryFilter)
+                    {(projectUnits || [])
+                      .filter((u) => u && (inventoryFilter === "all" || (u?.status || "available") === inventoryFilter))
                       .map((u) => {
+                        const uStatus = (u?.status || "available").toString();
+                        const uPrice = Number(u?.price) || 0;
+                        const uPriceCr = (uPrice / 10000000).toFixed(2);
+                        const uNum = u?.unit_number || "Unit";
+                        const uConfig = u?.configuration || "Standard";
+
                         let bgClass = "bg-[#00a8e8] text-white hover:bg-[#0092cc] border-[#0092cc]/40";
-                        if (u.status === "pending_reserve") {
+                        if (uStatus === "pending_reserve") {
                           bgClass = "bg-[#ff9f1c] text-white hover:bg-[#e88d10] border-[#e88d10]/40";
-                        } else if (u.status === "reserved") {
+                        } else if (uStatus === "reserved") {
                           bgClass = "bg-[#f77f00] text-white hover:bg-[#d66e00] border-[#d66e00]/40";
-                        } else if (u.status === "sold") {
+                        } else if (uStatus === "sold") {
                           bgClass = "bg-[#e63946] text-white hover:bg-[#d62839] border-[#d62839]/40";
                         }
 
                         return (
                           <button
-                            key={u.id}
+                            key={u.id || Math.random()}
                             type="button"
                             onClick={() => handleUnitCardClick(u)}
-                            title={`Plot/Unit #${u.unit_number} • ${u.configuration} • ₹${(u.price / 10000000).toFixed(2)} Cr (${u.status.toUpperCase()})`}
+                            title={`Plot/Unit #${uNum} • ${uConfig} • ₹${uPriceCr} Cr (${uStatus.toUpperCase()})`}
                             className={`min-w-[48px] h-10 px-2 rounded-lg font-mono font-extrabold text-xs flex flex-col items-center justify-center transition-all duration-150 hover:scale-105 shadow-xs border ${bgClass}`}
                           >
-                            <span>{u.unit_number}</span>
+                            <span>{uNum}</span>
                           </button>
                         );
                       })}
