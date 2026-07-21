@@ -78,14 +78,108 @@ function InvoiceCMSPage() {
   const [previewTab, setPreviewTab] = useState<"desktop" | "sample">("desktop");
   const [savingSection, setSavingSection] = useState<string | null>(null);
 
+const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
+  id: "inv_settings_default",
+  company_info: {
+    company_name: "BLX REALITY PRIVATE LIMITED",
+    logo_url: "",
+    registered_address:
+      "#301D, 3rd Floor, Tower B, Brigade Twin Towers, Pipeline Road HMT, Yeswanthpur, Bengaluru, Karnataka 560022",
+    branch_address:
+      "#301D, 3rd Floor, Tower B, Brigade Twin Towers, Pipeline Road HMT, Yeswanthpur, Bengaluru, Karnataka 560022",
+    phone: "+91-9743264328 / +44-7944450039 / +91-8197773166",
+    email: "discoverblr@theblxrealty.com",
+    website: "www.theblxrealty.com",
+    gst_number: "29AAOCB0144P1Z7",
+    pan_number: "AAOCB0144P",
+    cin: "U68100KA2025PTC209397",
+    rera_number: "PRM/KA/RERA/1251/310/PR/251006",
+  },
+  banking_details: {
+    bank_name: "HDFC Bank Ltd",
+    account_holder: "BLX REALTY PRIVATE LIMITED - CLIENT ESCROW A/C",
+    account_number: "50200089123456",
+    ifsc_code: "HDFC0000240",
+    branch_name: "Yeswanthpur Industrial Area Branch, Bengaluru",
+    upi_id: "blxrealty@hdfcbank",
+    qr_code_url: "",
+  },
+  tax_statutory: {
+    gst_enabled: true,
+    cgst_rate: 9,
+    sgst_rate: 9,
+    igst_rate: 18,
+    tds_enabled: false,
+    tds_rate: 1,
+    pf_enabled: true,
+    pf_code: "KAR/BLR/1098234/000",
+    esi_enabled: true,
+    esi_code: "53000981720000101",
+    statutory_notes:
+      "GST is applicable as per Ministry of Finance notification for Real Estate Services.",
+  },
+  invoice_notes: {
+    payment_instructions:
+      "Please make all payments via Bank Transfer / RTGS / NEFT or UPI strictly using official company accounts.",
+    terms_and_conditions:
+      "1. All booking advances are subject to final agreement terms.\n2. Holding deposits are valid for 15 days from issuance.\n3. This document is a computer-generated tax invoice.",
+    cancellation_policy:
+      "Cancellations within 7 days receive 90% refund. Post 7 days, cancellation is governed by RERA rules.",
+    refund_policy:
+      "Refunds are processed within 10 business days directly to the original bank account.",
+    late_payment_policy:
+      "1.5% monthly interest penalty applied on overdue installments beyond 15 days.",
+    legal_disclaimer: "BLX Realty Pvt Ltd is a licensed RERA real estate agency.",
+    thank_you_message:
+      "Thank you for choosing BLX Realty as your trusted property partner!",
+    customer_support: "Desk: +91 81977 73166 | support@theblxrealty.com",
+  },
+  branding: {
+    logo_url: "",
+    header_style: "modern",
+    footer_info:
+      "BLX Realty Pvt Ltd · Corporate Real Estate Advisory & Luxury Property Marketing",
+    signature_title: "Authorized Signatory",
+    signatory_name: "Nischith L. (Director)",
+    signature_image_url: "",
+    seal_image_url: "",
+    primary_color: "#4f46e5",
+    secondary_color: "#1e1b4b",
+    text_color: "#0f172a",
+  },
+  numbering: {
+    prefix: "INV-2026-",
+    suffix: "/BLX",
+    start_sequence: 1001,
+    padding: 4,
+    auto_increment: true,
+  },
+  payment_info: {
+    accepted_methods: [
+      "Bank Transfer (NEFT/RTGS)",
+      "UPI Payment",
+      "Cheque",
+      "Demand Draft",
+    ],
+    payment_due_instructions: "Payment due within 15 days of invoice date.",
+    offline_instructions:
+      "Deliver cheques favoring 'BLX REALTY PRIVATE LIMITED' at Corporate Office.",
+    qr_instructions:
+      "Scan UPI QR code using any UPI Banking App to complete instant token transfer.",
+  },
+  default_template_id: "modern_executive",
+};
+
   useEffect(() => {
     if (settingsData) {
       setFormData(settingsData);
       if (settingsData.default_template_id) {
         setSelectedTemplate(settingsData.default_template_id);
       }
+    } else if (!isSettingsLoading && !formData) {
+      setFormData(DEFAULT_INVOICE_SETTINGS);
     }
-  }, [settingsData]);
+  }, [settingsData, isSettingsLoading, formData]);
 
   useEffect(() => {
     if (permissionsData) {

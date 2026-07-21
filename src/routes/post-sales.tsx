@@ -87,13 +87,47 @@ function PostSalesPage() {
     });
   }, [scopedBookings, searchTerm]);
 
+  // Lookup maps for dynamic status resolution
+  const regMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    (postSalesData?.registrations || []).forEach((r: any) => {
+      map[r.booking_id] = r;
+    });
+    return map;
+  }, [postSalesData]);
+
+  const possMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    (postSalesData?.possessions || []).forEach((p: any) => {
+      map[p.booking_id] = p;
+    });
+    return map;
+  }, [postSalesData]);
+
   const handleOpenRegModal = (item: any) => {
     setSelectedBookingForReg(item);
-    setRegDate(new Date().toISOString().split("T")[0]);
-    setRegDocNum(`DOC-2026-${Math.floor(10000 + Math.random() * 90000)}`);
-    setRegStampDuty(String(Math.round((item.amount || 0) * 0.05)));
-    setRegCharges("30000");
-    setRegStatus("scheduled");
+    const existing = regMap[item.id];
+    if (existing) {
+      setRegDate(
+        existing.registration_date
+          ? existing.registration_date.split("T")[0]
+          : new Date().toISOString().split("T")[0],
+      );
+      setRegOffice(existing.sub_registrar_office || "Sub-Registrar Office, MG Road");
+      setRegDocNum(
+        existing.document_number || `DOC-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+      );
+      setRegStampDuty(String(existing.stamp_duty || Math.round((item.amount || 0) * 0.05)));
+      setRegCharges(String(existing.registration_charges || 30000));
+      setRegStatus(existing.status || "scheduled");
+    } else {
+      setRegDate(new Date().toISOString().split("T")[0]);
+      setRegOffice("Sub-Registrar Office, MG Road");
+      setRegDocNum(`DOC-2026-${Math.floor(10000 + Math.random() * 90000)}`);
+      setRegStampDuty(String(Math.round((item.amount || 0) * 0.05)));
+      setRegCharges("30000");
+      setRegStatus("scheduled");
+    }
   };
 
   const handleRegSubmit = async (e: React.FormEvent) => {
@@ -123,9 +157,25 @@ function PostSalesPage() {
 
   const handleOpenPossModal = (item: any) => {
     setSelectedBookingForPoss(item);
-    setPossDate(new Date().toISOString().split("T")[0]);
-    setKeyStatus("scheduled");
-    setSnagList(["Minor paint touchup in master bedroom", "Electrical switch plate alignment"]);
+    const existing = possMap[item.id];
+    if (existing) {
+      setPossDate(
+        existing.possession_date
+          ? existing.possession_date.split("T")[0]
+          : new Date().toISOString().split("T")[0],
+      );
+      setKeyStatus(existing.keys_handover_status || "scheduled");
+      setSnagList(
+        existing.snag_list || [
+          "Minor paint touchup in master bedroom",
+          "Electrical switch plate alignment",
+        ],
+      );
+    } else {
+      setPossDate(new Date().toISOString().split("T")[0]);
+      setKeyStatus("scheduled");
+      setSnagList(["Minor paint touchup in master bedroom", "Electrical switch plate alignment"]);
+    }
   };
 
   const handlePossSubmit = async (e: React.FormEvent) => {
@@ -232,47 +282,67 @@ function PostSalesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {filteredBookings.map((b) => (
-                        <tr key={b.id} className="hover:bg-muted/20 transition-colors">
-                          <td className="p-3">
-                            <div className="font-bold text-foreground">{b.project_name}</div>
-                            <div className="text-[10px] font-mono text-primary font-bold">
-                              Unit: {b.unit_number} (#BK-{b.id.slice(-6).toUpperCase()})
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="font-bold text-foreground">{b.customer_name}</div>
-                            <div className="text-[10px] text-muted-foreground">
-                              {b.customer_phone}
-                            </div>
-                          </td>
-                          <td className="p-3 text-muted-foreground">
-                            Sub-Registrar Office, MG Road
-                          </td>
-                          <td className="p-3 font-mono">
-                            <div className="font-bold text-foreground">Doc: DOC-2026-94812</div>
-                            <div className="text-[10px] text-muted-foreground">
-                              Stamp Duty: ₹
-                              {Math.round((b.amount || 0) * 0.05).toLocaleString("en-IN")}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/30 text-[10px]">
-                              SCHEDULED
-                            </Badge>
-                          </td>
-                          <td className="p-3 text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-[11px] gap-1 font-bold"
-                              onClick={() => handleOpenRegModal(b)}
-                            >
-                              <FileText className="h-3 w-3" /> Log Registration
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                      {filteredBookings.map((b) => {
+                        const reg = regMap[b.id];
+                        const office = reg?.sub_registrar_office || "Sub-Registrar Office, MG Road";
+                        const docNum = reg?.document_number || `DOC-2026-${b.id.slice(-5).toUpperCase()}`;
+                        const stampDutyVal =
+                          reg?.stamp_duty !== undefined
+                            ? reg.stamp_duty
+                            : Math.round((b.amount || 0) * 0.05);
+                        const statusVal = reg?.status || "scheduled";
+
+                        return (
+                          <tr key={b.id} className="hover:bg-muted/20 transition-colors">
+                            <td className="p-3">
+                              <div className="font-bold text-foreground">{b.project_name}</div>
+                              <div className="text-[10px] font-mono text-primary font-bold">
+                                Unit: {b.unit_number} (#BK-{b.id.slice(-6).toUpperCase()})
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-foreground">{b.customer_name}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {b.customer_phone}
+                              </div>
+                            </td>
+                            <td className="p-3 text-muted-foreground">{office}</td>
+                            <td className="p-3 font-mono">
+                              <div className="font-bold text-foreground">Doc: {docNum}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                Stamp Duty: ₹{Number(stampDutyVal).toLocaleString("en-IN")}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              {statusVal === "registered" && (
+                                <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px] font-bold">
+                                  ✓ REGISTERED & HANDED OVER
+                                </Badge>
+                              )}
+                              {statusVal === "in_progress" && (
+                                <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[10px] font-bold">
+                                  DOCS SUBMITTED
+                                </Badge>
+                              )}
+                              {statusVal !== "registered" && statusVal !== "in_progress" && (
+                                <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/30 text-[10px] font-bold">
+                                  SCHEDULED
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[11px] gap-1 font-bold"
+                                onClick={() => handleOpenRegModal(b)}
+                              >
+                                <FileText className="h-3 w-3" /> Log Registration
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -308,45 +378,69 @@ function PostSalesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {filteredBookings.map((b) => (
-                        <tr key={b.id} className="hover:bg-muted/20 transition-colors">
-                          <td className="p-3">
-                            <div className="font-bold text-foreground">{b.project_name}</div>
-                            <div className="text-[10px] font-mono text-primary font-bold">
-                              Unit: {b.unit_number}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="font-bold text-foreground">{b.customer_name}</div>
-                            <div className="text-[10px] text-muted-foreground">
-                              {b.customer_phone}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <Badge
-                              variant="outline"
-                              className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[10px]"
-                            >
-                              INSPECTION PENDING
-                            </Badge>
-                          </td>
-                          <td className="p-3 text-muted-foreground text-[11px]">
-                            2 snag items logged
-                          </td>
-                          <td className="p-3 text-muted-foreground text-[11px]">
-                            Pending customer signature
-                          </td>
-                          <td className="p-3 text-right">
-                            <Button
-                              size="sm"
-                              className="h-7 text-[11px] gap-1 font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
-                              onClick={() => handleOpenPossModal(b)}
-                            >
-                              <Key className="h-3 w-3" /> Manage Handover
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                      {filteredBookings.map((b) => {
+                        const poss = possMap[b.id];
+                        const kStatus = poss?.keys_handover_status || "scheduled";
+                        const snagCount = (poss?.snag_list || []).length || 2;
+                        const isSignedOff = kStatus === "handed_over" || kStatus === "completed";
+
+                        return (
+                          <tr key={b.id} className="hover:bg-muted/20 transition-colors">
+                            <td className="p-3">
+                              <div className="font-bold text-foreground">{b.project_name}</div>
+                              <div className="text-[10px] font-mono text-primary font-bold">
+                                Unit: {b.unit_number}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <div className="font-bold text-foreground">{b.customer_name}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {b.customer_phone}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              {isSignedOff ? (
+                                <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-[10px] font-bold">
+                                  ✓ KEYS HANDED OVER & SIGNED OFF
+                                </Badge>
+                              ) : kStatus === "snag_pending" ? (
+                                <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/30 text-[10px] font-bold">
+                                  SNAG WORK UNDERWAY
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[10px] font-bold"
+                                >
+                                  INSPECTION PENDING
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="p-3 text-muted-foreground text-[11px]">
+                              {snagCount} snag items logged
+                            </td>
+                            <td className="p-3 text-[11px]">
+                              {isSignedOff ? (
+                                <div className="font-bold text-emerald-600 flex items-center gap-1">
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                  Signed off by {poss?.signed_off_by || b.customer_name}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">Pending customer signature</span>
+                              )}
+                            </td>
+                            <td className="p-3 text-right">
+                              <Button
+                                size="sm"
+                                className="h-7 text-[11px] gap-1 font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => handleOpenPossModal(b)}
+                              >
+                                <Key className="h-3 w-3" /> Manage Handover
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

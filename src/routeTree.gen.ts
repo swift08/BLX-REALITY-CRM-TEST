@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsersRouteImport } from './routes/users'
 import { Route as SitevisitsRouteImport } from './routes/sitevisits'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RevenueOpsRouteImport } from './routes/revenue-ops'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -43,6 +44,11 @@ const SitevisitsRoute = SitevisitsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RevenueOpsRoute = RevenueOpsRouteImport.update({
+  id: '/revenue-ops',
+  path: '/revenue-ops',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -149,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
+  '/revenue-ops': typeof RevenueOpsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
   '/users': typeof UsersRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
+  '/revenue-ops': typeof RevenueOpsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
   '/users': typeof UsersRoute
@@ -194,6 +202,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/projects': typeof ProjectsRoute
   '/reports': typeof ReportsRoute
+  '/revenue-ops': typeof RevenueOpsRoute
   '/settings': typeof SettingsRoute
   '/sitevisits': typeof SitevisitsRoute
   '/users': typeof UsersRoute
@@ -218,6 +227,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/projects'
     | '/reports'
+    | '/revenue-ops'
     | '/settings'
     | '/sitevisits'
     | '/users'
@@ -240,6 +250,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/projects'
     | '/reports'
+    | '/revenue-ops'
     | '/settings'
     | '/sitevisits'
     | '/users'
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/projects'
     | '/reports'
+    | '/revenue-ops'
     | '/settings'
     | '/sitevisits'
     | '/users'
@@ -285,6 +297,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   ProjectsRoute: typeof ProjectsRoute
   ReportsRoute: typeof ReportsRoute
+  RevenueOpsRoute: typeof RevenueOpsRoute
   SettingsRoute: typeof SettingsRoute
   SitevisitsRoute: typeof SitevisitsRoute
   UsersRoute: typeof UsersRoute
@@ -311,6 +324,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/revenue-ops': {
+      id: '/revenue-ops'
+      path: '/revenue-ops'
+      fullPath: '/revenue-ops'
+      preLoaderRoute: typeof RevenueOpsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports': {
@@ -453,6 +473,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   ProjectsRoute: ProjectsRoute,
   ReportsRoute: ReportsRoute,
+  RevenueOpsRoute: RevenueOpsRoute,
   SettingsRoute: SettingsRoute,
   SitevisitsRoute: SitevisitsRoute,
   UsersRoute: UsersRoute,

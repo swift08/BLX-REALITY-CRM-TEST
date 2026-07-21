@@ -96,8 +96,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       { to: "/followups", label: "Follow-ups", icon: BellRing },
       { to: "/sitevisits", label: "Site Visits", icon: MapPin },
       { to: "/projects", label: "Projects", icon: Briefcase },
-      { to: "/bookings", label: "Bookings", icon: KeyRound },
-      { to: "/payments", label: "Payments", icon: DollarSign },
+      { to: "/revenue-ops", label: "Revenue Operations", icon: DollarSign },
       { to: "/post-sales", label: "Post-Sales Ops", icon: ShieldCheck },
     ];
 
@@ -109,7 +108,6 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       items.push({ to: "/lead-assignment-settings", label: "Lead Assignment", icon: Workflow });
     }
 
-    items.push({ to: "/finance-dashboard", label: "Finance Analytics", icon: PieChart });
     items.push({ to: "/analytics", label: "Analytics", icon: TrendingUp });
 
     return items;

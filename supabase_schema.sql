@@ -281,6 +281,24 @@ CREATE TABLE IF NOT EXISTS invoice_role_permissions (
     updated_by TEXT
 );
 
+-- User Invoice Permissions Table (Per-user overrides)
+CREATE TABLE IF NOT EXISTS user_invoice_permissions (
+    user_id TEXT PRIMARY KEY,
+    user_name TEXT,
+    role TEXT NOT NULL,
+    can_view_cms BOOLEAN DEFAULT true NOT NULL,
+    can_edit_company_info BOOLEAN DEFAULT false NOT NULL,
+    can_update_banking BOOLEAN DEFAULT false NOT NULL,
+    can_modify_tax BOOLEAN DEFAULT false NOT NULL,
+    can_edit_terms BOOLEAN DEFAULT false NOT NULL,
+    can_change_branding BOOLEAN DEFAULT false NOT NULL,
+    can_manage_templates BOOLEAN DEFAULT false NOT NULL,
+    can_generate_invoices BOOLEAN DEFAULT true NOT NULL,
+    can_regenerate_invoices BOOLEAN DEFAULT false NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_by TEXT
+);
+
 
 -- Meta Webhook Logs Table
 CREATE TABLE IF NOT EXISTS meta_webhook_logs (
@@ -543,3 +561,71 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_invoices_booking ON invoices(booking_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+
+-- ============================================================
+-- POST-SALES OPERATIONS TABLES
+-- ============================================================
+
+-- Sale Deed Registrations Table
+CREATE TABLE IF NOT EXISTS public.registrations (
+    id TEXT PRIMARY KEY DEFAULT 'reg-' || substring(gen_random_uuid()::text from 1 for 8),
+    booking_id TEXT REFERENCES bookings(id) ON DELETE CASCADE NOT NULL,
+    registration_date TIMESTAMP WITH TIME ZONE,
+    sub_registrar_office TEXT,
+    document_number TEXT,
+    stamp_duty NUMERIC DEFAULT 0,
+    registration_charges NUMERIC DEFAULT 0,
+    status TEXT DEFAULT 'scheduled' NOT NULL,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Property Possessions Table
+CREATE TABLE IF NOT EXISTS public.possessions (
+    id TEXT PRIMARY KEY DEFAULT 'poss-' || substring(gen_random_uuid()::text from 1 for 8),
+    booking_id TEXT REFERENCES bookings(id) ON DELETE CASCADE NOT NULL,
+    possession_date TIMESTAMP WITH TIME ZONE,
+    keys_handover_status TEXT DEFAULT 'pending' NOT NULL,
+    snag_list JSONB DEFAULT '[]'::jsonb NOT NULL,
+    handover_checklist JSONB DEFAULT '{}'::jsonb NOT NULL,
+    signed_off_by TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Milestone Payment Schedules Table
+CREATE TABLE IF NOT EXISTS public.payment_schedules (
+    id TEXT PRIMARY KEY DEFAULT 'sched-' || substring(gen_random_uuid()::text from 1 for 8),
+    booking_id TEXT REFERENCES bookings(id) ON DELETE CASCADE NOT NULL,
+    milestone_name TEXT NOT NULL,
+    percentage NUMERIC DEFAULT 0 NOT NULL,
+    amount NUMERIC DEFAULT 0 NOT NULL,
+    due_date TIMESTAMP WITH TIME ZONE,
+    status TEXT DEFAULT 'pending' NOT NULL,
+    created_by TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Booking Refunds Table
+CREATE TABLE IF NOT EXISTS public.refunds (
+    id TEXT PRIMARY KEY DEFAULT 'ref-' || substring(gen_random_uuid()::text from 1 for 8),
+    booking_id TEXT REFERENCES bookings(id) ON DELETE CASCADE NOT NULL,
+    voucher_number TEXT NOT NULL,
+    requested_amount NUMERIC DEFAULT 0 NOT NULL,
+    approved_amount NUMERIC DEFAULT 0 NOT NULL,
+    status TEXT DEFAULT 'requested' NOT NULL,
+    refund_date TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    payment_method TEXT DEFAULT 'bank_transfer' NOT NULL,
+    reference TEXT,
+    notes TEXT,
+    created_by TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_registrations_booking ON public.registrations(booking_id);
+CREATE INDEX IF NOT EXISTS idx_possessions_booking ON public.possessions(booking_id);
+CREATE INDEX IF NOT EXISTS idx_payment_schedules_booking ON public.payment_schedules(booking_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_booking ON public.refunds(booking_id);
+
