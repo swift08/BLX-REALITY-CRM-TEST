@@ -583,7 +583,7 @@ export default async function handler(req: any, res: any) {
         if (!projectId) return res.status(400).json({ error: "projectId is required" });
 
         try {
-          const { data, error } = await supabase
+          let { data, error } = await supabase
             .from("project_configurations")
             .select("*")
             .eq("project_id", projectId)
@@ -2760,7 +2760,7 @@ export default async function handler(req: any, res: any) {
         if (!opportunityId) return res.status(400).json({ error: "Missing opportunityId" });
 
         // 1. Fetch details
-        const { data: details, error: detErr } = await supabase
+        let { data: details, error: detErr } = await supabase
           .from("negotiation_details")
           .select("*")
           .eq("opportunity_id", opportunityId)
@@ -3456,53 +3456,6 @@ export default async function handler(req: any, res: any) {
         });
 
         return res.status(200).json({ success: true, matrix: prepared });
-      }
-
-      case "getUserInvoicePermissions": {
-        try {
-          const { data, error } = await supabase.from("user_invoice_permissions").select("*");
-
-          if (error || !data) {
-            return res.status(200).json([]);
-          }
-          return res.status(200).json(data);
-        } catch (e: any) {
-          return res.status(200).json([]);
-        }
-      }
-
-      case "updateUserInvoicePermissions": {
-        if (actorRole !== "super_admin" && actorRole !== "admin") {
-          return res
-            .status(403)
-            .json({ error: "Only Admin or Super Admin can modify User Invoice Permissions." });
-        }
-        const { userPermissions } = payload;
-        const now = new Date().toISOString();
-
-        const prepared = (userPermissions || []).map((item: any) => ({
-          ...item,
-          updated_at: now,
-          updated_by: actorName,
-        }));
-
-        const { error } = await supabase
-          .from("user_invoice_permissions")
-          .upsert(prepared, { onConflict: "user_id" });
-
-        if (error) {
-          console.warn("Supabase upsert failed for user_invoice_permissions:", error.message);
-        }
-
-        await supabase.from("audit_logs").insert({
-          user: actorName,
-          action: "USER_INVOICE_PERMISSIONS_UPDATED",
-          timestamp: now,
-          old_value: "Previous User Permissions Matrix",
-          new_value: `User invoice permissions updated for ${prepared.length} users by ${actorName}`,
-        });
-
-        return res.status(200).json({ success: true, userPermissions: prepared });
       }
 
       default:
