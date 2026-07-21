@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Baskervville:ital@0;1&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap");
 
 @import "tailwindcss" source(none);
 @source "../src";
@@ -7,9 +7,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-brand: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Libre Baskerville", "Baskervville", "Baskerville", "Baskerville Old Face", "Hoefler Text", Garamond, Georgia, serif;
+  --font-display: "Libre Baskerville", "Baskervville", "Baskerville", "Baskerville Old Face", "Hoefler Text", Garamond, Georgia, serif;
+  --font-brand: "Libre Baskerville", "Baskervville", "Baskerville", "Baskerville Old Face", "Hoefler Text", Garamond, Georgia, serif;
+  --font-serif: "Libre Baskerville", "Baskervville", "Baskerville", "Baskerville Old Face", "Hoefler Text", Garamond, Georgia, serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -149,23 +150,30 @@
 @layer base {
   * {
     border-color: var(--color-border);
+    font-family: var(--font-sans);
   }
   html,
-  body {
-    font-family: var(--font-sans);
+  body,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  span,
+  div,
+  label,
+  button,
+  input,
+  select,
+  textarea {
+    font-family: "Libre Baskerville", "Baskervville", "Baskerville", "Baskerville Old Face", "Hoefler Text", Garamond, Georgia, serif !important;
   }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     -webkit-font-smoothing: antialiased;
-  }
-  h1,
-  h2,
-  h3,
-  h4,
-  h5 {
-    font-family: var(--font-display);
-    letter-spacing: -0.02em;
   }
 }
 
