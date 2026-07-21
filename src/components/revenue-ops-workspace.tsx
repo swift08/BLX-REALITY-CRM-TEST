@@ -799,78 +799,107 @@ export function RevenueOpsWorkspace({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div
             onClick={() => {
-              setStageFilter("booking_initiated");
-              toast.info("Filtered workspace to pending invoice issuance.");
+              const pending = enrichedRecords.find((r) => !r.isIssued && r.lifecycleStage !== "void");
+              if (pending) {
+                setSelectedBookingId(pending.id);
+                setStageFilter("booking_initiated");
+                handleOpenIssueModal(pending);
+              } else {
+                toast.info("All active booking contracts have official tax invoices issued.");
+              }
             }}
-            className="p-3 rounded-xl border bg-card hover:bg-muted/30 cursor-pointer transition-all flex items-center justify-between shadow-xs"
+            className="p-3.5 rounded-xl border bg-card hover:bg-muted/40 cursor-pointer transition-all flex items-center justify-between shadow-xs border-primary/20 hover:border-primary/50"
           >
             <div className="space-y-0.5">
               <div className="text-[10px] font-bold uppercase text-muted-foreground">Smart Recommendation</div>
               <div className="text-xs font-bold text-foreground">Issue Pending Tax Invoices</div>
             </div>
-            <Receipt className="h-4 w-4 text-primary" />
+            <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+              <Receipt className="h-4 w-4" />
+            </div>
           </div>
 
           <div
             onClick={() => {
-              setSearchTerm("unpaid");
-              toast.info("Filtered workspace to unpaid overdue customer accounts.");
+              const overdue = enrichedRecords.find((r) => r.outstandingAmount > 0 && r.lifecycleStage !== "void");
+              if (overdue) {
+                setSelectedBookingId(overdue.id);
+                setStageFilter("invoice_issued");
+                setSearchTerm("unpaid");
+                toast.success(`Focused overdue account for ${overdue.customer_name} (Unit ${overdue.unit_number}).`);
+              } else {
+                toast.info("No overdue accounts currently requiring follow up.");
+              }
             }}
-            className="p-3 rounded-xl border bg-card hover:bg-muted/30 cursor-pointer transition-all flex items-center justify-between shadow-xs"
+            className="p-3.5 rounded-xl border bg-card hover:bg-muted/40 cursor-pointer transition-all flex items-center justify-between shadow-xs border-amber-500/20 hover:border-amber-500/50"
           >
             <div className="space-y-0.5">
               <div className="text-[10px] font-bold uppercase text-amber-600">Smart Recommendation</div>
               <div className="text-xs font-bold text-foreground">Follow Up Overdue Accounts</div>
             </div>
-            <Phone className="h-4 w-4 text-amber-500" />
+            <div className="h-8 w-8 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center">
+              <Phone className="h-4 w-4" />
+            </div>
           </div>
 
           <div
             onClick={() => {
-              if (selectedRecord) {
+              const target = selectedRecord || enrichedRecords.find((r) => r.isIssued && r.lifecycleStage !== "void");
+              if (target) {
+                setSelectedBookingId(target.id);
                 downloadDemandLetterPdf(
                   {
                     demandNumber: `DEM-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-                    bookingId: selectedRecord.id,
-                    customerName: selectedRecord.customer_name,
-                    customerPhone: selectedRecord.customer_phone,
-                    customerEmail: selectedRecord.customer_email,
-                    projectName: selectedRecord.project_name,
-                    unitNumber: selectedRecord.unit_number,
+                    bookingId: target.id,
+                    customerName: target.customer_name,
+                    customerPhone: target.customer_phone,
+                    customerEmail: target.customer_email,
+                    projectName: target.project_name,
+                    unitNumber: target.unit_number,
                     milestoneName: "Plinth / Slab 1 Completion (15%)",
-                    milestoneAmount: Math.round(selectedRecord.totalBilled * 0.15),
+                    milestoneAmount: Math.round(target.totalBilled * 0.15),
                     dueDate: new Date(Date.now() + 15 * 86400000).toISOString(),
                   },
                   invoiceSettings,
                 );
+                toast.success(`Generated Milestone Demand Letter PDF for ${target.customer_name} (Unit ${target.unit_number})!`);
               } else {
-                toast.info("Select a record from the ledger first.");
+                toast.info("No active issued record available for demand letter generation.");
               }
             }}
-            className="p-3 rounded-xl border bg-card hover:bg-muted/30 cursor-pointer transition-all flex items-center justify-between shadow-xs"
+            className="p-3.5 rounded-xl border bg-card hover:bg-muted/40 cursor-pointer transition-all flex items-center justify-between shadow-xs border-rose-500/20 hover:border-rose-500/50"
           >
             <div className="space-y-0.5">
-              <div className="text-[10px] font-bold uppercase text-primary">Smart Recommendation</div>
+              <div className="text-[10px] font-bold uppercase text-rose-600">Smart Recommendation</div>
               <div className="text-xs font-bold text-foreground">Issue Milestone Demand Letter</div>
             </div>
-            <FileText className="h-4 w-4 text-rose-500" />
+            <div className="h-8 w-8 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center">
+              <FileText className="h-4 w-4" />
+            </div>
           </div>
 
           <div
             onClick={() => {
-              if (selectedRecord && selectedRecord.outstandingAmount > 0) {
-                handleOpenPaymentModal(selectedRecord);
+              const target =
+                (selectedRecord && selectedRecord.outstandingAmount > 0 ? selectedRecord : null) ||
+                enrichedRecords.find((r) => r.outstandingAmount > 0 && r.lifecycleStage !== "void");
+
+              if (target) {
+                setSelectedBookingId(target.id);
+                handleOpenPaymentModal(target);
               } else {
-                toast.info("Select an active record with outstanding balance.");
+                toast.info("All active invoices are 100% paid and cleared!");
               }
             }}
-            className="p-3 rounded-xl border bg-card hover:bg-muted/30 cursor-pointer transition-all flex items-center justify-between shadow-xs"
+            className="p-3.5 rounded-xl border bg-card hover:bg-muted/40 cursor-pointer transition-all flex items-center justify-between shadow-xs border-emerald-500/20 hover:border-emerald-500/50"
           >
             <div className="space-y-0.5">
               <div className="text-[10px] font-bold uppercase text-emerald-600">Smart Recommendation</div>
               <div className="text-xs font-bold text-foreground">Record Today's Clearance</div>
             </div>
-            <DollarSign className="h-4 w-4 text-emerald-500" />
+            <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+              <DollarSign className="h-4 w-4" />
+            </div>
           </div>
         </div>
 
