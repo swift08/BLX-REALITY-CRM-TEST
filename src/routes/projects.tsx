@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   useProjects,
   useDevelopers,
@@ -2089,13 +2090,13 @@ function ProjectsPage() {
                         const uNum = u?.unit_number || "Unit";
                         const uConfig = u?.configuration || "Standard";
 
-                        let bgClass = "bg-[#00a8e8] text-white hover:bg-[#0092cc] border-[#0092cc]/40";
+                        let bgClass = "bg-emerald-500 text-white hover:bg-emerald-600 border-emerald-600/30";
                         if (uStatus === "pending_reserve") {
-                          bgClass = "bg-[#ff9f1c] text-white hover:bg-[#e88d10] border-[#e88d10]/40";
+                          bgClass = "bg-amber-400 text-white hover:bg-amber-500 border-amber-500/30";
                         } else if (uStatus === "reserved") {
-                          bgClass = "bg-[#f77f00] text-white hover:bg-[#d66e00] border-[#d66e00]/40";
+                          bgClass = "bg-amber-600 text-white hover:bg-amber-700 border-amber-700/30";
                         } else if (uStatus === "sold") {
-                          bgClass = "bg-[#e63946] text-white hover:bg-[#d62839] border-[#d62839]/40";
+                          bgClass = "bg-rose-500 text-white hover:bg-rose-600 border-rose-600/30";
                         }
 
                         return (
