@@ -28,7 +28,7 @@ import {
   Eye,
   EyeOff,
   Receipt,
-  DollarSign,
+  IndianRupee,
   ShieldCheck,
   PieChart,
   Workflow,
@@ -96,7 +96,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       { to: "/followups", label: "Follow-ups", icon: BellRing },
       { to: "/sitevisits", label: "Site Visits", icon: MapPin },
       { to: "/projects", label: "Projects", icon: Briefcase },
-      { to: "/revenue-ops", label: "Revenue Operations", icon: DollarSign },
+      { to: "/revenue-ops", label: "Revenue Operations", icon: IndianRupee },
       { to: "/post-sales", label: "Post-Sales Ops", icon: ShieldCheck },
     ];
 

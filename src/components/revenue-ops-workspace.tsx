@@ -51,7 +51,7 @@ import {
   Filter,
   Download,
   KeyRound,
-  DollarSign,
+  IndianRupee,
   FileText,
   CheckCircle,
   Clock,
@@ -909,7 +909,7 @@ export function RevenueOpsWorkspace({
               <div className="text-xs font-bold text-foreground">Record Today's Clearance</div>
             </div>
             <div className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <DollarSign className="h-4 w-4" />
+              <IndianRupee className="h-4 w-4" />
             </div>
           </div>
         </div>
@@ -1355,7 +1355,7 @@ export function RevenueOpsWorkspace({
                                 className="w-full text-xs font-bold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
                                 onClick={() => handleOpenPaymentModal(selectedRecord)}
                               >
-                                <DollarSign className="h-3.5 w-3.5" /> Record Payment
+                                <IndianRupee className="h-3.5 w-3.5" /> Record Payment
                               </Button>
                             )}
 
@@ -1642,7 +1642,7 @@ export function RevenueOpsWorkspace({
         <DialogContent className="max-w-md bg-card rounded-xl border border-border shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-bold font-display text-foreground flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-emerald-600" /> Record Received Payment
+              <IndianRupee className="h-5 w-5 text-emerald-600" /> Record Received Payment
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-1">
               Record a collection payment against tax invoice {selectedInvoiceForPayment?.invoiceNumber}.

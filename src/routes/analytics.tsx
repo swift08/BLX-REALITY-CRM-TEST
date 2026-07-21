@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLeads, useCRMUsers } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { can } from "@/lib/permissions";
-import { TrendingUp, Users, Target, DollarSign, MapPin, BarChart2 } from "lucide-react";
+import { TrendingUp, Users, Target, IndianRupee, MapPin, BarChart2 } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -201,7 +201,7 @@ function AnalyticsPage() {
               <CardContent className="p-4 sm:p-6">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-purple-500/10 grid place-items-center flex-shrink-0">
-                    <DollarSign className="h-5 w-5 text-purple-500" />
+                    <IndianRupee className="h-5 w-5 text-purple-500" />
                   </div>
                   <div>
                     <div className="text-2xl font-bold">
