@@ -38,6 +38,7 @@ import {
   X,
   Download,
   Boxes,
+  LayoutGrid,
   Check,
   Search,
   AlertTriangle,
@@ -2063,26 +2064,47 @@ function ProjectsPage() {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {projectUnits
-                    .filter((u) => inventoryFilter === "all" || u.status === inventoryFilter)
-                    .map((u) => (
-                      <div
-                        key={u.id}
-                        onClick={() => handleUnitCardClick(u)}
-                        className={`p-3.5 rounded-xl border text-xs font-semibold text-center flex flex-col justify-between h-28 shadow-sm transition-all duration-200 cursor-pointer hover:-translate-y-0.5 hover:shadow ${getStatusColor(u.status)}`}
-                      >
-                        <div className="text-[9px] uppercase font-bold tracking-wider opacity-85">
-                          Unit Number
-                        </div>
-                        <div className="text-sm font-black tracking-tight my-1">
-                          {u.unit_number}
-                        </div>
-                        <div className="mt-2 text-[9px] font-medium opacity-90 border-t border-white/20 pt-1.5 truncate">
-                          {u.configuration} · {(u.price / 10000000).toFixed(2)} Cr
-                        </div>
-                      </div>
-                    ))}
+                <div className="p-4 sm:p-5 rounded-2xl bg-muted/20 border border-border/60 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-3">
+                    <div>
+                      <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                        <LayoutGrid className="h-4 w-4 text-primary" /> Visual Plot Layout
+                      </h4>
+                      <p className="text-[11px] text-muted-foreground">
+                        Grouped layout, ordered by site / unit number — tap any plot tile to inspect & manage
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-mono font-bold bg-card shrink-0">
+                      {projectUnits.filter((u) => inventoryFilter === "all" || u.status === inventoryFilter).length} Plots Shown
+                    </Badge>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {projectUnits
+                      .filter((u) => inventoryFilter === "all" || u.status === inventoryFilter)
+                      .map((u) => {
+                        let bgClass = "bg-[#00a8e8] text-white hover:bg-[#0092cc] border-[#0092cc]/40";
+                        if (u.status === "pending_reserve") {
+                          bgClass = "bg-[#ff9f1c] text-white hover:bg-[#e88d10] border-[#e88d10]/40";
+                        } else if (u.status === "reserved") {
+                          bgClass = "bg-[#f77f00] text-white hover:bg-[#d66e00] border-[#d66e00]/40";
+                        } else if (u.status === "sold") {
+                          bgClass = "bg-[#e63946] text-white hover:bg-[#d62839] border-[#d62839]/40";
+                        }
+
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => handleUnitCardClick(u)}
+                            title={`Plot/Unit #${u.unit_number} • ${u.configuration} • ₹${(u.price / 10000000).toFixed(2)} Cr (${u.status.toUpperCase()})`}
+                            className={`min-w-[48px] h-10 px-2 rounded-lg font-mono font-extrabold text-xs flex flex-col items-center justify-center transition-all duration-150 hover:scale-105 shadow-xs border ${bgClass}`}
+                          >
+                            <span>{u.unit_number}</span>
+                          </button>
+                        );
+                      })}
+                  </div>
                 </div>
               )}
             </TabsContent>
