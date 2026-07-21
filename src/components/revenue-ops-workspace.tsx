@@ -421,6 +421,17 @@ export function RevenueOpsWorkspace({
     }).format(val);
   };
 
+  const formatShortCurrency = (val: number) => {
+    if (!val || val === 0) return "₹0 L";
+    const abs = Math.abs(val);
+    if (abs >= 10000000) {
+      const cr = val / 10000000;
+      return `₹${cr.toFixed(2).replace(/\.00$/, "")} Cr`;
+    }
+    const lakh = val / 100000;
+    return `₹${lakh.toFixed(1).replace(/\.0$/, "")} L`;
+  };
+
   // Bulk Operations Handlers
   const handleToggleSelectAll = () => {
     if (selectedRecordIds.length === filteredRecords.length) {
@@ -1393,7 +1404,7 @@ export function RevenueOpsWorkspace({
                       </Badge>
                     </div>
                     <div className="font-mono text-xs font-bold text-foreground">
-                      ₹{(p.totalRev / 100000).toFixed(1)} Lakhs
+                      {formatShortCurrency(p.totalRev)}
                     </div>
                   </div>
 
@@ -1406,10 +1417,10 @@ export function RevenueOpsWorkspace({
 
                   <div className="flex items-center justify-between text-[10px] font-mono">
                     <span className="text-emerald-600 font-bold">
-                      Collected: ₹{(p.collected / 100000).toFixed(1)} L ({p.pct}%)
+                      Collected: {formatShortCurrency(p.collected)} ({p.pct}%)
                     </span>
                     <span className="text-amber-600 font-bold">
-                      Outstanding: ₹{(p.pending / 100000).toFixed(1)} L
+                      Outstanding: {formatShortCurrency(p.pending)}
                     </span>
                   </div>
                 </div>
@@ -1455,10 +1466,10 @@ export function RevenueOpsWorkspace({
                         </td>
                         <td className="p-2.5 font-mono text-muted-foreground">{exec.dealsCount}</td>
                         <td className="p-2.5 font-mono font-bold text-foreground">
-                          ₹{(exec.salesVal / 100000).toFixed(1)} L
+                          {formatShortCurrency(exec.salesVal)}
                         </td>
                         <td className="p-2.5 font-mono font-bold text-emerald-600">
-                          ₹{(exec.collectedVal / 100000).toFixed(1)} L
+                          {formatShortCurrency(exec.collectedVal)}
                         </td>
                         <td className="p-2.5">
                           <Badge

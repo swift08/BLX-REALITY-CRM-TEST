@@ -76,7 +76,12 @@ function AnalyticsPage() {
       bookings,
       converted,
       convRate,
-      revenue: revenue > 0 ? `₹${(revenue / 100000).toFixed(1)}L` : "₹0",
+      revenue:
+        revenue > 0
+          ? revenue >= 10000000
+            ? `₹${(revenue / 10000000).toFixed(2).replace(/\.00$/, "")} Cr`
+            : `₹${(revenue / 100000).toFixed(1).replace(/\.0$/, "")} L`
+          : "₹0",
     };
   });
 
@@ -200,7 +205,11 @@ function AnalyticsPage() {
                   </div>
                   <div>
                     <div className="text-2xl font-bold">
-                      {totalRevenue > 0 ? `₹${(totalRevenue / 100000).toFixed(1)}L` : "₹0"}
+                      {totalRevenue > 0
+                        ? totalRevenue >= 10000000
+                          ? `₹${(totalRevenue / 10000000).toFixed(2).replace(/\.00$/, "")} Cr`
+                          : `₹${(totalRevenue / 100000).toFixed(1).replace(/\.0$/, "")} L`
+                        : "₹0"}
                     </div>
                     <div className="text-xs text-muted-foreground">Revenue Collected</div>
                   </div>
