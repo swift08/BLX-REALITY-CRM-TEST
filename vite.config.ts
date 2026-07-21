@@ -5,6 +5,9 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
+  esbuild: {
+    drop: ["console", "debugger"],
+  },
   server: {
     port: 8080,
   },
