@@ -1475,6 +1475,11 @@ export default async function handler(req: any, res: any) {
       }
       case "addProject": {
         const { proj } = payload;
+        const marginVal = proj.profit_percentage !== undefined ? Number(proj.profit_percentage) : 2.0;
+        let timeline = proj.possession_timeline || "";
+        if (!timeline.includes("[margin:")) {
+          timeline = `${timeline} [margin:${marginVal}]`.trim();
+        }
         const { data, error } = await supabase
           .from("projects")
           .insert({
@@ -1486,7 +1491,7 @@ export default async function handler(req: any, res: any) {
             price_range: proj.price_range || "",
             status: proj.status || "New Launch",
             property_type: proj.property_type || "Apartment",
-            possession_timeline: proj.possession_timeline || "",
+            possession_timeline: timeline,
             project_size: proj.project_size || "",
             rera_number: proj.rera_number || "",
             cover_image_url: proj.cover_image_url || "",
@@ -1505,9 +1510,17 @@ export default async function handler(req: any, res: any) {
       }
       case "updateProject": {
         const { id, updates } = payload;
+        const cleanUpdates = { ...updates };
+        if (cleanUpdates.profit_percentage !== undefined) {
+          const marginVal = Number(cleanUpdates.profit_percentage);
+          const existingTimeline = cleanUpdates.possession_timeline ?? "";
+          const baseTimeline = existingTimeline.replace(/\[margin:[\d.]+\]/g, "").trim();
+          cleanUpdates.possession_timeline = `${baseTimeline} [margin:${marginVal}]`.trim();
+          delete cleanUpdates.profit_percentage;
+        }
         const { data, error } = await supabase
           .from("projects")
-          .update(updates)
+          .update(cleanUpdates)
           .eq("id", id)
           .select()
           .single();

@@ -232,6 +232,95 @@ export interface ProjectRow {
   floor_plans?: string[];
   documents?: string[];
   gallery_images?: string[];
+  profit_percentage?: number | null;
+  status?: string;
+  property_type?: string;
+  possession_timeline?: string;
+  project_size?: string;
+  rera_number?: string;
+  cover_image_url?: string;
+}
+
+// ── Profit & Financial Helpers ─────────────────────────────────
+
+export function getProjectProfitRate(proj?: any): number {
+  if (!proj) return 2.0;
+  if (typeof proj.profit_percentage === "number" && !isNaN(proj.profit_percentage)) {
+    return proj.profit_percentage;
+  }
+  if (proj.possession_timeline && proj.possession_timeline.includes("[margin:")) {
+    const match = proj.possession_timeline.match(/\[margin:([\d.]+)\]/);
+    if (match && match[1]) return parseFloat(match[1]);
+  }
+  return 2.0; // Default 2.0% profit margin
+}
+
+export function getCleanTimeline(timelineStr?: string): string {
+  if (!timelineStr) return "";
+  return timelineStr.replace(/\[margin:[\d.]+\]/g, "").trim();
+}
+
+export function formatINRWithUnits(amount: number): string {
+  if (isNaN(amount) || amount === 0) return "₹0";
+  if (amount >= 10000000) {
+    return `₹${(amount / 10000000).toFixed(2).replace(/\.00$/, "")} Cr`;
+  }
+  if (amount >= 100000) {
+    return `₹${(amount / 100000).toFixed(2).replace(/\.00$/, "")} Lakhs`;
+  }
+  if (amount >= 1000) {
+    return `₹${(amount / 1000).toFixed(1).replace(/\.0$/, "")} K`;
+  }
+  return `₹${amount.toLocaleString("en-IN")}`;
+}
+
+export function getProjectRevenueAndProfit(
+  proj: ProjectRow,
+  bookings: any[] = [],
+  inventory: UnitRow[] = [],
+  customers: any[] = []
+) {
+  const marginPct = getProjectProfitRate(proj);
+
+  // 1. Calculate booked revenue
+  const projectBookings = bookings.filter((b) => {
+    const cust = customers.find((c) => c.id === b.lead_id);
+    return (
+      cust?.project_id === proj.id ||
+      (b.project_name && b.project_name.toLowerCase() === proj.name.toLowerCase())
+    );
+  });
+  const bookedRevenue = projectBookings.reduce((sum, b) => sum + (b.amount || 0), 0);
+
+  // 2. Calculate inventory value for sold/reserved units
+  const projectUnits = inventory.filter((u) => u.project_id === proj.id);
+  const soldUnitsRevenue = projectUnits
+    .filter((u) => u.status === "sold" || u.status === "reserved")
+    .reduce((sum, u) => sum + (u.price || 0), 0);
+
+  let effectiveRevenue = Math.max(bookedRevenue, soldUnitsRevenue);
+
+  // Fallback to price_range if no actual bookings exist yet
+  if (effectiveRevenue === 0 && proj.price_range) {
+    const match = proj.price_range.match(/₹?\s*([\d.]+)\s*(Cr|Lakhs|L|K)?/i);
+    if (match) {
+      let val = parseFloat(match[1]);
+      const unit = (match[2] || "").toLowerCase();
+      if (unit.includes("cr")) val *= 10000000;
+      else if (unit.includes("l")) val *= 100000;
+      else if (unit.includes("k")) val *= 1000;
+      effectiveRevenue = val;
+    }
+  }
+
+  const calculatedProfit = (effectiveRevenue * marginPct) / 100;
+
+  return {
+    revenue: effectiveRevenue,
+    marginPct,
+    profit: calculatedProfit,
+    bookedCount: projectBookings.length,
+  };
 }
 
 export interface DeveloperRow {

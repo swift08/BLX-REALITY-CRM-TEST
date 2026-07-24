@@ -16,11 +16,16 @@ import {
   addDeveloper,
   useInventory,
   useCustomers,
+  useBookings,
   addUnit,
   updateUnit,
   useProjectConfigurations,
   addProjectConfiguration,
   deleteProjectConfiguration,
+  getProjectProfitRate,
+  getCleanTimeline,
+  formatINRWithUnits,
+  getProjectRevenueAndProfit,
 } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { can } from "@/lib/permissions";
@@ -276,6 +281,8 @@ function ProjectsPage() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const { data: bookings = [] } = useBookings();
+
   // Add Form state
   const [form, setForm] = useState({
     name: "",
@@ -290,6 +297,7 @@ function ProjectsPage() {
     project_size: "",
     rera_number: "",
     cover_image_url: "",
+    profit_percentage: 2.0,
   });
 
   // Developer mode (select vs custom typing)
@@ -376,6 +384,7 @@ function ProjectsPage() {
     project_size: "",
     rera_number: "",
     cover_image_url: "",
+    profit_percentage: 2.0,
   });
   const [editDevInputMode, setEditDevInputMode] = useState<"select" | "custom">("select");
   const [editCustomDevName, setEditCustomDevName] = useState("");
@@ -489,6 +498,7 @@ function ProjectsPage() {
         developer_id: resolvedDevId,
         total_units: Number(form.total_units),
         available_units: Number(form.available_units),
+        profit_percentage: Number(form.profit_percentage || 2.0),
       });
 
       toast.success("Project listing added successfully!");
@@ -509,6 +519,7 @@ function ProjectsPage() {
         project_size: "",
         rera_number: "",
         cover_image_url: "",
+        profit_percentage: 2.0,
       });
       setDevInputMode("select");
       setCustomDevName("");
@@ -720,10 +731,11 @@ function ProjectsPage() {
       price_range: proj.price_range || "",
       status: proj.status || "New Launch",
       property_type: proj.property_type || "Apartment",
-      possession_timeline: proj.possession_timeline || "",
+      possession_timeline: getCleanTimeline(proj.possession_timeline || ""),
       project_size: proj.project_size || "",
       rera_number: proj.rera_number || "",
       cover_image_url: proj.cover_image_url || "",
+      profit_percentage: getProjectProfitRate(proj),
     });
     setEditDevInputMode("select");
     setEditCustomDevName("");
@@ -898,6 +910,7 @@ function ProjectsPage() {
         developer_id: resolvedDevId || null,
         total_units: Number(editForm.total_units),
         available_units: Number(editForm.available_units),
+        profit_percentage: Number(editForm.profit_percentage || 2.0),
       });
 
       toast.success("Project listing updated!");
@@ -1181,11 +1194,12 @@ function ProjectsPage() {
                   </div>
                 </div>
 
+                {/* Possession & Size */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="ppossession">Possession Timeline</Label>
+                    <Label htmlFor="pposs">Possession Timeline</Label>
                     <Input
-                      id="ppossession"
+                      id="pposs"
                       placeholder="e.g. Dec 2027 or Ready"
                       value={form.possession_timeline}
                       onChange={(e) => setForm({ ...form, possession_timeline: e.target.value })}
@@ -1193,7 +1207,7 @@ function ProjectsPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="psize">Project Size / Scale</Label>
+                    <Label htmlFor="psize">Project Size</Label>
                     <Input
                       id="psize"
                       placeholder="e.g. 8 Acres or 6 Towers"
@@ -1254,10 +1268,12 @@ function ProjectsPage() {
               (p.documents?.length || 0) +
               (p.gallery_images?.length || 0);
 
+            const finances = getProjectRevenueAndProfit(p, bookings, inventory, customers);
+
             return (
               <Card
                 key={p.id}
-                className="relative w-full h-[225px] overflow-hidden rounded-2xl border border-border/50 group cursor-pointer shadow-sm hover:shadow-xl hover:shadow-primary/5 transition-all duration-300"
+                className="relative w-full h-[235px] overflow-hidden rounded-2xl border border-border/50 group cursor-pointer shadow-sm hover:shadow-xl hover:shadow-primary/5 transition-all duration-300"
                 onClick={() => handleEditOpen(p)}
               >
                 {/* Background Cover Photo / Placeholder */}
@@ -1281,13 +1297,16 @@ function ProjectsPage() {
                 {/* Theme-responsive gradient overlay for readability of text */}
                 <div className="absolute inset-0 bg-gradient-to-t from-white/95 via-white/80 to-transparent dark:from-black/95 dark:via-black/75 dark:to-transparent" />
 
-                {/* Top Overlay: Status & Type Badges */}
-                <div className="absolute top-2.5 left-2.5 flex gap-1 z-10">
+                {/* Top Overlay: Status, Type & Profit Badges */}
+                <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1 z-10 max-w-[80%]">
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-black/60 backdrop-blur-md border border-white/10 text-white shadow-xs">
                     {p.status || "New Launch"}
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-primary/40 backdrop-blur-md border border-primary/20 text-white shadow-xs">
                     {p.property_type || "Apartment"}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-emerald-600/90 backdrop-blur-md border border-emerald-400/30 text-white shadow-xs flex items-center gap-0.5">
+                    ⚡ {finances.marginPct}% Profit Margin
                   </span>
                 </div>
 
@@ -1307,7 +1326,7 @@ function ProjectsPage() {
                 )}
 
                 {/* Bottom Overlay Info Layer */}
-                <div className="absolute bottom-0 inset-x-0 p-3.5 flex flex-col justify-end space-y-2 text-left">
+                <div className="absolute bottom-0 inset-x-0 p-3.5 flex flex-col justify-end space-y-1.5 text-left">
                   {/* Name and Builder */}
                   <div>
                     <h4 className="text-sm font-extrabold font-display text-zinc-900 dark:text-white tracking-wide truncate">
@@ -1331,33 +1350,27 @@ function ProjectsPage() {
                     </div>
                   </div>
 
-                  {/* Available vs Total Units */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
-                        Available Units
-                      </span>
-                      <span className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">
-                        {displayAvailableUnits}
-                      </span>
-                    </div>
-                    <div className="flex flex-col text-right">
-                      <span className="text-[8px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
-                        Total Units
-                      </span>
-                      <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 mt-1">
-                        {displayTotalUnits}
-                      </span>
-                    </div>
+                  {/* Revenue & Calculated Net Profit */}
+                  <div className="flex items-center justify-between text-[10px] py-0.5 px-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 dark:text-emerald-200">
+                    <span className="font-bold">
+                      Rev: {formatINRWithUnits(finances.revenue)}
+                    </span>
+                    <span className="font-extrabold text-emerald-700 dark:text-emerald-300">
+                      Profit ({finances.marginPct}%): {formatINRWithUnits(finances.profit)}
+                    </span>
                   </div>
 
-                  {/* Files Catalog Count */}
-                  <div className="text-[8px] font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-white/10 backdrop-blur-md px-2 py-1 rounded flex justify-between items-center border border-zinc-200/50 dark:border-white/5">
-                    <span className="flex items-center gap-1">
-                      <FileText className="h-3 w-3 text-zinc-500 dark:text-zinc-400" /> Files
-                      Catalog:
-                    </span>
-                    <span className="font-bold text-zinc-900 dark:text-white">
+                  {/* Available vs Total Units */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[8px] uppercase font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
+                        Units:
+                      </span>
+                      <span className="text-xs font-black text-zinc-900 dark:text-white">
+                        {displayAvailableUnits} available / {displayTotalUnits} total
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-bold text-zinc-700 dark:text-zinc-300">
                       {totalFiles} files
                     </span>
                   </div>
@@ -1651,6 +1664,54 @@ function ProjectsPage() {
                         className="h-10 rounded-xl"
                       />
                     </div>
+                  </div>
+
+                  {/* Profit Margin Percentage (%) */}
+                  <div className="space-y-1.5 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                    <Label htmlFor="eprofit" className="flex items-center justify-between text-xs font-semibold">
+                      <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
+                        <CircleDollarSign className="h-4 w-4" />
+                        Project Profit Margin (%) *
+                      </span>
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        Commission Rate
+                      </span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="eprofit"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        disabled={!can(role).editProject()}
+                        placeholder="e.g. 2.0"
+                        value={editForm.profit_percentage ?? 2.0}
+                        onChange={(e) =>
+                          setEditForm({
+                            ...editForm,
+                            profit_percentage: parseFloat(e.target.value) || 0,
+                          })
+                        }
+                        className="h-10 rounded-xl font-bold pr-10 border-emerald-500/30 focus-visible:ring-emerald-500"
+                      />
+                      <div className="absolute right-3 top-2.5 text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                        %
+                      </div>
+                    </div>
+                    {selectedProj && (
+                      <div className="mt-2 text-[11px] p-2 rounded-lg bg-emerald-500/10 text-emerald-900 dark:text-emerald-200 flex items-center justify-between font-semibold">
+                        <span>Project Profit Preview:</span>
+                        <span className="font-extrabold text-emerald-700 dark:text-emerald-300">
+                          {formatINRWithUnits(
+                            (getProjectRevenueAndProfit(selectedProj, bookings, inventory, customers).revenue *
+                              (editForm.profit_percentage || 2.0)) /
+                              100
+                          )}{" "}
+                          profit ({editForm.profit_percentage || 2.0}% margin)
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* RERA Number */}
