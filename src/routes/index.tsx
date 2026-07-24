@@ -13,6 +13,8 @@ import {
   useProjects,
   useFollowups,
   useAuditLogs,
+  getProjectProfitRate,
+  getProjectRevenueAndProfit,
 } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { can } from "@/lib/permissions";
@@ -39,6 +41,7 @@ import {
   FileBarChart2,
   FileCheck,
   DollarSign,
+  CircleDollarSign,
   Search,
   ExternalLink,
 } from "lucide-react";
@@ -229,11 +232,32 @@ function Dashboard() {
     const completedBookingsAmount = (c.bookings || [])
       .filter((b) => b.payment_status === "completed")
       .reduce((s, b) => s + (b.amount || 0), 0);
-    return sum + completedBookingsAmount;
+    const singleBookingAmt = (c.booking && c.booking.payment_status === "completed") ? (c.booking.amount || 0) : 0;
+    return sum + Math.max(completedBookingsAmount, singleBookingAmt);
   }, 0);
-  const conversionRatePct = totalLeadsCount
-    ? ((convertedLeadsCount / totalLeadsCount) * 100).toFixed(1) + "%"
-    : "0.0%";
+
+  // Total Profit calculation based on Project Profit Margin / Commission %
+  const totalProfitVal = rawCustomers.reduce((sum, c) => {
+    const proj = projects.find((p) => p.id === c.project_id || p.name === c.projects?.name);
+    const profitRate = getProjectProfitRate(proj);
+
+    const completedBookingsProfit = (c.bookings || [])
+      .filter((b) => b.payment_status === "completed" || c.stage === "converted")
+      .reduce((s, b) => s + ((b.amount || 0) * profitRate) / 100, 0);
+
+    const singleBookingProfit = (c.booking && (c.booking.payment_status === "completed" || c.stage === "converted"))
+      ? ((c.booking.amount || 0) * profitRate) / 100
+      : 0;
+
+    let custProfit = Math.max(completedBookingsProfit, singleBookingProfit);
+
+    if (custProfit === 0 && (c.stage === "converted" || c.stage === "Won")) {
+      const projFinances = proj ? getProjectRevenueAndProfit(proj, [], [], [c]) : { profit: 0 };
+      custProfit = projFinances.profit;
+    }
+
+    return sum + custProfit;
+  }, 0);
 
   // Monthly charts data
   const getMonthlyLeadTrendData = () => {
@@ -430,9 +454,9 @@ function Dashboard() {
       case "visits_completed":
         return rawCustomers.filter((c) => c.stage === "site_visit_completed");
       case "revenue":
-        return rawCustomers.filter((c) => c.booking && c.booking.payment_status === "completed");
-      case "conversion_pct":
-        return rawCustomers;
+        return rawCustomers.filter((c) => (c.booking && c.booking.payment_status === "completed") || c.stage === "converted");
+      case "profit":
+        return rawCustomers.filter((c) => (c.booking && c.booking.payment_status === "completed") || c.stage === "converted");
       default:
         return [];
     }
@@ -732,22 +756,24 @@ function Dashboard() {
                   </tbody>
                 </table>
               </div>
-            ) : selectedCardMetric?.id === "conversion_pct" ? (
+            ) : selectedCardMetric?.id === "profit" ? (
               <div className="overflow-x-auto text-xs">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="text-muted-foreground uppercase tracking-wider border-b bg-muted/20 h-10 font-semibold select-none">
                       <th className="px-6 py-2">Customer Details</th>
                       <th className="px-3 py-2">Project</th>
-                      <th className="px-3 py-2">Stage</th>
-                      <th className="px-3 py-2">Win Status</th>
-                      <th className="px-3 py-2">Budget</th>
-                      <th className="px-6 py-2 text-right">Owner</th>
+                      <th className="px-3 py-2">Booking Revenue</th>
+                      <th className="px-3 py-2">Commission Margin</th>
+                      <th className="px-6 py-2 text-right">Net Profit</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredMetricData.map((c) => {
-                      const isConverted = c.stage === "converted";
+                      const proj = projects.find((p) => p.id === c.project_id || p.name === c.projects?.name);
+                      const rate = getProjectProfitRate(proj);
+                      const amt = c.booking?.amount || 0;
+                      const profitAmt = (amt * rate) / 100;
                       return (
                         <tr
                           key={c.id}
@@ -768,27 +794,18 @@ function Dashboard() {
                             </div>
                           </td>
                           <td className="px-3 py-2 text-foreground font-medium">
-                            {c.projects?.name ?? "—"}
-                          </td>
-                          <td className="px-3 py-2">
-                            <StageBadge value={stageLabels[c.stage as Stage] ?? c.stage} />
-                          </td>
-                          <td className="px-3 py-2">
-                            {isConverted ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 uppercase tracking-wide">
-                                Converted
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground uppercase tracking-wide">
-                                In Progress
-                              </span>
-                            )}
+                            {c.projects?.name ?? proj?.name ?? "—"}
                           </td>
                           <td className="px-3 py-2 font-bold text-foreground">
-                            <MaskedField value={c.budget || ""} type="budget" />
+                            {amt ? formatINR(amt) : "—"}
                           </td>
-                          <td className="px-6 py-2 text-right text-muted-foreground font-medium">
-                            {c.owner}
+                          <td className="px-3 py-2">
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-bold">
+                              {rate}%
+                            </span>
+                          </td>
+                          <td className="px-6 py-2 text-right font-extrabold text-emerald-600 dark:text-emerald-400">
+                            {formatINR(profitAmt)}
                           </td>
                         </tr>
                       );
@@ -875,7 +892,7 @@ function Dashboard() {
 
           if (w.id === "snapshot") {
             return (
-              <div key="snapshot" className={`${gridClass} grid grid-cols-2 md:grid-cols-5 gap-4`}>
+              <div key="snapshot" className={`${gridClass} grid grid-cols-2 md:grid-cols-4 gap-4`}>
                 <Card
                   onClick={() =>
                     setSelectedCardMetric({
@@ -958,32 +975,6 @@ function Dashboard() {
                 <Card
                   onClick={() =>
                     setSelectedCardMetric({
-                      id: "hot_leads",
-                      title: "Hot Leads",
-                      description: "High interest prospects tagged as hot temperature",
-                    })
-                  }
-                  className="border-border/60 shadow-sm hover:shadow hover:border-rose-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
-                >
-                  <CardContent className="p-4 flex items-center justify-between text-left">
-                    <div>
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Hot Leads
-                      </span>
-                      <div className="text-xl font-bold font-display tracking-tight mt-1">
-                        {hotLeadsCount}
-                      </div>
-                      <p className="text-[9px] text-muted-foreground mt-0.5">High Interest</p>
-                    </div>
-                    <div className="p-2 rounded bg-rose-500/10 text-rose-500">
-                      <Flame className="h-4 w-4" />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card
-                  onClick={() =>
-                    setSelectedCardMetric({
                       id: "converted",
                       title: "Converted Leads",
                       description: "Successful won deals and closed-won customers",
@@ -1003,32 +994,6 @@ function Dashboard() {
                     </div>
                     <div className="p-2 rounded bg-indigo-500/10 text-indigo-500">
                       <FileCheck className="h-4 w-4" />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card
-                  onClick={() =>
-                    setSelectedCardMetric({
-                      id: "lost_leads",
-                      title: "Lost Leads",
-                      description: "Closed-lost or dropped leads",
-                    })
-                  }
-                  className="border-border/60 shadow-sm hover:shadow hover:border-slate-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
-                >
-                  <CardContent className="p-4 flex items-center justify-between text-left">
-                    <div>
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Lost Leads
-                      </span>
-                      <div className="text-xl font-bold font-display tracking-tight mt-1">
-                        {lostLeadsCount}
-                      </div>
-                      <p className="text-[9px] text-muted-foreground mt-0.5">Closed/Dropped</p>
-                    </div>
-                    <div className="p-2 rounded bg-slate-500/10 text-slate-500">
-                      <TrendingDown className="h-4 w-4" />
                     </div>
                   </CardContent>
                 </Card>
@@ -1114,25 +1079,25 @@ function Dashboard() {
                 <Card
                   onClick={() =>
                     setSelectedCardMetric({
-                      id: "conversion_pct",
-                      title: "Conversion Ratio Breakdown",
-                      description: "Win Ratio (Converted Leads / Total Leads)",
+                      id: "profit",
+                      title: "Project Commission Profit",
+                      description: "Net profit calculated from configured project commission rates %",
                     })
                   }
-                  className="border-border/60 shadow-sm hover:shadow hover:border-pink-500/45 hover:bg-muted/10 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
+                  className="border-border/60 shadow-sm hover:shadow hover:border-emerald-500/45 hover:bg-emerald-500/5 transition-all select-none hover:-translate-y-0.5 duration-200 cursor-pointer text-left"
                 >
                   <CardContent className="p-4 flex items-center justify-between text-left">
                     <div>
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Conversion %
+                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                        Profit
                       </span>
-                      <div className="text-xl font-bold font-display tracking-tight mt-1">
-                        {conversionRatePct}
+                      <div className="text-xl font-bold font-display tracking-tight text-emerald-600 dark:text-emerald-400 mt-1">
+                        {formatINR(totalProfitVal)}
                       </div>
-                      <p className="text-[9px] text-muted-foreground mt-0.5">Win Ratio</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">Commission Profit</p>
                     </div>
-                    <div className="p-2 rounded bg-pink-500/10 text-pink-500">
-                      <TrendingUp className="h-4 w-4" />
+                    <div className="p-2 rounded bg-emerald-500/10 text-emerald-500">
+                      <CircleDollarSign className="h-4 w-4" />
                     </div>
                   </CardContent>
                 </Card>
