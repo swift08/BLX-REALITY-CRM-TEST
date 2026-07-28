@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import { addAuditLog } from "@/lib/queries";
 
 interface MaskedFieldProps {
   value: string;
@@ -58,7 +59,17 @@ export function MaskedField({ value, type }: MaskedFieldProps) {
     setRevealed(true);
   };
 
-  const logRevealEvent = () => {
+  const logRevealEvent = async () => {
+    try {
+      await addAuditLog(
+        `REVEAL_CONFIDENTIAL_${type.toUpperCase()}`,
+        "Protected (Masked)",
+        `Unmasked by ${user?.email || "User"}`,
+      );
+    } catch (e) {
+      console.error("Failed to write reveal audit log:", e);
+    }
+
     if (window.electronSecurity?.logSecurityEvent) {
       window.electronSecurity.logSecurityEvent({
         action: "CONFIDENTIAL_DATA_REVEALED",

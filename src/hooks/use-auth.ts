@@ -165,20 +165,34 @@ export function useAuth(): AuthState & {
   }, []);
 
   const changeRole = useCallback(
-    async (role: AppRole) => {
-      localStorage.setItem("blx-realty-active-role", role);
+    async (targetRole: AppRole) => {
+      const prevRole = localStorage.getItem("blx-realty-active-role") || "unknown";
+      localStorage.setItem("blx-realty-active-role", targetRole);
 
       const sessionStr = localStorage.getItem("blx-realty-session");
       if (sessionStr) {
         try {
           const parsed = JSON.parse(sessionStr);
           if (parsed.user?.id) {
-            await callApi("updateUserRole", { userId: parsed.user.id, role });
+            await callApi("updateUserRole", { userId: parsed.user.id, role: targetRole });
           }
           if (parsed.user?.user_metadata) {
-            parsed.user.user_metadata.role = role;
+            parsed.user.user_metadata.role = targetRole;
           }
           localStorage.setItem("blx-realty-session", JSON.stringify(parsed));
+
+          const actionType =
+            targetRole === "super_admin"
+              ? "SUPER_ADMIN_LOGIN"
+              : targetRole === "admin"
+                ? "ADMIN_LOGIN"
+                : "ROLE_SWITCH";
+          await callApi("addAuditLog", {
+            action: actionType,
+            oldVal: `Role: ${prevRole}`,
+            newVal: `Switched to ${targetRole} by ${parsed.user?.email || "User"}`,
+          }).catch(() => {});
+
           syncAuth(parsed);
         } catch (e) {
           console.error("Change role error:", e);

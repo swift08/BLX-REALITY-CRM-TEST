@@ -385,9 +385,7 @@ export function RevenueOpsWorkspace({
 
   // Executive Leaderboard Data
   const executivePerformance = useMemo(() => {
-    const salesExecs = crmUsers.filter(
-      (u) => u.role === "sales_executive" || u.role === "manager" || u.role === "super_admin",
-    );
+    const salesExecs = crmUsers.filter((u) => u.role === "sales_executive");
     return salesExecs
       .map((exec) => {
         const eBookings = filteredRecords.filter(

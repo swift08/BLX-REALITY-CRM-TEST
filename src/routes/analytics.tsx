@@ -272,23 +272,28 @@ function AnalyticsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={260}>
+                <ResponsiveContainer width="100%" height={280}>
                   <PieChart>
                     <Pie
                       data={sourceData}
                       cx="50%"
-                      cy="50%"
-                      outerRadius={90}
+                      cy="45%"
+                      outerRadius={75}
+                      innerRadius={30}
                       dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      labelLine={false}
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                      labelLine={true}
                     >
                       {sourceData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip />
-                    <Legend />
+                    <Tooltip formatter={(val: any) => [`${val} Leads`, "Count"]} />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      formatter={(val: string) => <span className="text-[11px] font-medium">{val}</span>}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>

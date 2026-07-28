@@ -12,6 +12,111 @@ export const Route = createFileRoute("/auditlogs")({
   component: AuditLogsPage,
 });
 
+function formatAuditLog(log: any) {
+  const action = log.action || "";
+  const oldVal = log.old_value || "";
+  const newVal = log.new_value || "";
+  const rawUser = log.user || "Unknown";
+
+  if (action.includes("MISSING_AUTH_TOKEN")) {
+    return {
+      user: "Guest / Expired Session",
+      badge: "bg-amber-500/10 text-amber-600 border border-amber-500/20 font-bold",
+      actionLabel: "🔒 Blocked: Unauthenticated Access",
+      prevLabel: `Attempted Action: ${oldVal || "Data Request"}`,
+      newLabel: "Access Blocked (User Not Signed In)",
+    };
+  }
+
+  if (action.includes("REVEAL_CONFIDENTIAL_BUDGET")) {
+    return {
+      user: rawUser,
+      badge: "bg-purple-500/10 text-purple-600 border border-purple-500/20 font-bold",
+      actionLabel: "👁️ Budget Unmasked",
+      prevLabel: "Protected (Masked)",
+      newLabel: newVal || "Unmasked by User",
+    };
+  }
+
+  if (action.includes("REVEAL_CONFIDENTIAL_PHONE")) {
+    return {
+      user: rawUser,
+      badge: "bg-blue-500/10 text-blue-600 border border-blue-500/20 font-bold",
+      actionLabel: "📞 Phone Number Unmasked",
+      prevLabel: "Protected (Masked)",
+      newLabel: newVal || "Unmasked by User",
+    };
+  }
+
+  if (action.includes("REVEAL_CONFIDENTIAL_EMAIL")) {
+    return {
+      user: rawUser,
+      badge: "bg-sky-500/10 text-sky-600 border border-sky-500/20 font-bold",
+      actionLabel: "✉️ Email Unmasked",
+      prevLabel: "Protected (Masked)",
+      newLabel: newVal || "Unmasked by User",
+    };
+  }
+
+  if (action === "SUPER_ADMIN_LOGIN" || action.includes("SUPER_ADMIN_LOGIN")) {
+    return {
+      user: rawUser,
+      badge: "bg-amber-500/20 text-amber-500 border border-amber-500/40 font-extrabold shadow-xs",
+      actionLabel: "👑 Super Admin Signed In",
+      prevLabel: oldVal || "Signed Out",
+      newLabel: newVal || "Super Admin Active",
+    };
+  }
+
+  if (action === "ADMIN_LOGIN" || action.includes("ADMIN_LOGIN")) {
+    return {
+      user: rawUser,
+      badge: "bg-amber-500/10 text-amber-600 border border-amber-500/30 font-bold",
+      actionLabel: "🛠️ Admin Signed In",
+      prevLabel: oldVal || "Signed Out",
+      newLabel: newVal || "Admin Session Started",
+    };
+  }
+
+  if (action.includes("ROLE_SWITCH")) {
+    return {
+      user: rawUser,
+      badge: "bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 font-bold",
+      actionLabel: "🔄 Role Perspective Swapped",
+      prevLabel: oldVal || "Previous Role",
+      newLabel: newVal || "Target Role Swapped",
+    };
+  }
+
+  if (action.includes("USER_LOGIN") || action === "AUTH:LOGIN") {
+    return {
+      user: rawUser,
+      badge: "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-bold",
+      actionLabel: "🔑 User Signed In",
+      prevLabel: "Signed Out",
+      newLabel: newVal || "Session Started",
+    };
+  }
+
+  if (action.includes("AUTH:LOGOUT")) {
+    return {
+      user: rawUser,
+      badge: "bg-slate-500/10 text-slate-600 border border-slate-500/20 font-bold",
+      actionLabel: "🚪 User Signed Out",
+      prevLabel: oldVal || "Active Session",
+      newLabel: newVal || "Session Terminated",
+    };
+  }
+
+  return {
+    user: rawUser === "Unauthenticated" ? "Guest / Expired Session" : rawUser,
+    badge: "bg-primary/10 text-primary font-bold",
+    actionLabel: action.replace(/_/g, " "),
+    prevLabel: oldVal || "—",
+    newLabel: newVal || "—",
+  };
+}
+
 function AuditLogsPage() {
   const { data: logs = [], isLoading } = useAuditLogs();
   const { role } = useAuth();
@@ -32,10 +137,8 @@ function AuditLogsPage() {
             <div className="space-y-1.5">
               <h3 className="font-bold text-base text-foreground">Access Restricted</h3>
               <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
-                Audit Logs are available to{" "}
-                <span className="font-semibold text-foreground">Super Admin</span> and{" "}
-                <span className="font-semibold text-foreground">Admin</span> roles only. Contact
-                your administrator if you need access to this section.
+                Audit Logs are available to authorized roles only. Contact your administrator if
+                you need access.
               </p>
             </div>
             <div className="mt-2 px-3 py-1.5 rounded-lg bg-muted border text-[11px] font-semibold text-muted-foreground">
@@ -102,31 +205,36 @@ function AuditLogsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((l) => (
-                    <tr
-                      key={l.id}
-                      className="border-b last:border-0 hover:bg-muted/20 h-11 transition-colors"
-                    >
-                      <td className="px-6 py-2 font-mono text-[10px] text-muted-foreground whitespace-nowrap">
-                        {new Date(l.timestamp).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2 font-medium text-foreground">{l.user}</td>
-                      <td className="px-4 py-2">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-primary/10 text-primary uppercase">
-                          {l.action}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 font-mono text-[10px] text-muted-foreground">
-                        {l.ip || "192.168.1.105"}
-                      </td>
-                      <td className="px-4 py-2 font-mono text-[10px] text-muted-foreground truncate max-w-[200px]">
-                        {l.old_value || "—"}
-                      </td>
-                      <td className="px-6 py-2 font-mono text-[10px] text-foreground font-medium truncate max-w-[200px]">
-                        {l.new_value || "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered.map((l) => {
+                    const formatted = formatAuditLog(l);
+                    return (
+                      <tr
+                        key={l.id}
+                        className="border-b last:border-0 hover:bg-muted/20 h-11 transition-colors"
+                      >
+                        <td className="px-6 py-2 font-mono text-[10px] text-muted-foreground whitespace-nowrap">
+                          {new Date(l.timestamp).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-2 font-semibold text-foreground">
+                          {formatted.user}
+                        </td>
+                        <td className="px-4 py-2">
+                          <span className={`px-2 py-0.5 rounded text-[10px] ${formatted.badge}`}>
+                            {formatted.actionLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 font-mono text-[10px] text-muted-foreground">
+                          {l.ip || "192.168.1.105"}
+                        </td>
+                        <td className="px-4 py-2 text-[11px] text-muted-foreground whitespace-normal break-words max-w-[260px]" title={formatted.prevLabel}>
+                          {formatted.prevLabel}
+                        </td>
+                        <td className="px-6 py-2 text-[11px] text-foreground font-semibold whitespace-normal break-words max-w-[280px]" title={formatted.newLabel}>
+                          {formatted.newLabel}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

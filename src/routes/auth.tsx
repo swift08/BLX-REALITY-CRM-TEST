@@ -102,6 +102,21 @@ function AuthPage() {
           localStorage.setItem("blx-realty-session", JSON.stringify(data.session));
           const role = data.session.user?.user_metadata?.role || "super_admin";
           localStorage.setItem("blx-realty-active-role", role);
+          const actionType =
+            role === "super_admin"
+              ? "SUPER_ADMIN_LOGIN"
+              : role === "admin"
+                ? "ADMIN_LOGIN"
+                : "USER_LOGIN";
+          try {
+            await callApi("addAuditLog", {
+              action: actionType,
+              oldVal: "Signed Out",
+              newVal: `User ${email} signed in as ${role}`,
+            });
+          } catch (e) {
+            // ignore logging error
+          }
         }
         toast.success("Welcome back!");
         navigate({ to: "/" });

@@ -1297,14 +1297,19 @@ function ProjectsPage() {
                 {/* Theme-responsive gradient overlay for readability of text */}
                 <div className="absolute inset-0 bg-gradient-to-t from-white/95 via-white/80 to-transparent dark:from-black/95 dark:via-black/75 dark:to-transparent" />
 
-                {/* Top Overlay: Status, Type & Profit Badges */}
+                {/* Top Overlay: Status, Type, Configurations & Profit Badges */}
                 <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1 z-10 max-w-[80%]">
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-black/60 backdrop-blur-md border border-white/10 text-white shadow-xs">
                     {p.status || "New Launch"}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-primary/40 backdrop-blur-md border border-primary/20 text-white shadow-xs">
-                    {p.property_type || "Apartment"}
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-primary/80 backdrop-blur-md border border-primary/20 text-white shadow-xs">
+                    {p.property_type || "Flats / Villa"}
                   </span>
+                  {p.configurations && (
+                    <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-indigo-600/90 backdrop-blur-md border border-indigo-400/30 text-white shadow-xs">
+                      {p.configurations}
+                    </span>
+                  )}
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-emerald-600/90 backdrop-blur-md border border-emerald-400/30 text-white shadow-xs flex items-center gap-0.5">
                     ⚡ {finances.marginPct}% Profit Margin
                   </span>

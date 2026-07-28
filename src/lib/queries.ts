@@ -573,6 +573,14 @@ export function useLeads() {
           else if (ownerName.toLowerCase().includes("harshith")) ownerId = "u-1";
         }
 
+        const allBudgets = Array.from(new Set(opps.map((o: any) => o.budget).filter(Boolean)));
+        const displayBudget =
+          allBudgets.length > 1
+            ? allBudgets.join(" | ")
+            : activeOpp
+              ? activeOpp.budget
+              : null;
+
         return {
           ...c,
           health_score: health,
@@ -581,7 +589,7 @@ export function useLeads() {
           temperature: activeOpp ? activeOpp.temperature : "warm",
           owner: ownerName,
           owner_id: ownerId,
-          budget: activeOpp ? activeOpp.budget : null,
+          budget: displayBudget,
           project_id: activeOpp ? activeOpp.projectId : null,
           projects: null,
           booking: activeOpp ? activeOpp.booking : null,

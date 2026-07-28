@@ -10,6 +10,7 @@ import {
   useCalendarEvents,
   useCRMUsers,
   updateCalendarEvent,
+  addCalendarEvent,
   completeFollowup,
 } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
@@ -25,7 +26,17 @@ import {
   User,
   Badge,
   Check,
+  Plus,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/sitevisits")({
   head: () => ({ meta: [{ title: "Site Visits & Calendar · BLX Realty CRM" }] }),
@@ -43,6 +54,59 @@ function CalendarPage() {
   const { data: crmUsers = [] } = useCRMUsers();
   const [currentView, setCurrentView] = useState<CalendarView>("agenda");
   const [selectedDate, setSelectedDate] = useState(new Date());
+
+  // Add Site Visit Modal State
+  const [showAddVisitModal, setShowAddVisitModal] = useState(false);
+  const [isSubmittingVisit, setIsSubmittingVisit] = useState(false);
+  const [newVisitForm, setNewVisitForm] = useState({
+    title: "Site Visit",
+    customerId: "",
+    salesPerson: "",
+    date: new Date().toISOString().split("T")[0],
+    time: "11:00",
+    details: "",
+  });
+
+  const handleAddVisitSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVisitForm.title) {
+      toast.error("Please enter a visit title.");
+      return;
+    }
+    setIsSubmittingVisit(true);
+    try {
+      const startDateTime = new Date(`${newVisitForm.date}T${newVisitForm.time}:00`);
+      const endDateTime = new Date(startDateTime.getTime() + 60 * 60 * 1000);
+
+      await addCalendarEvent({
+        type: "visit",
+        title: newVisitForm.title,
+        start: startDateTime.toISOString(),
+        end: endDateTime.toISOString(),
+        customerId: newVisitForm.customerId || null,
+        salesPerson: newVisitForm.salesPerson || user?.user_metadata?.full_name || "Unassigned",
+        details: newVisitForm.details || "",
+        status: "pending",
+      });
+
+      toast.success("Site Visit scheduled successfully!");
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      queryClient.invalidateQueries({ queryKey: ["followups"] });
+      setShowAddVisitModal(false);
+      setNewVisitForm({
+        title: "Site Visit",
+        customerId: "",
+        salesPerson: "",
+        date: new Date().toISOString().split("T")[0],
+        time: "11:00",
+        details: "",
+      });
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to schedule site visit");
+    } finally {
+      setIsSubmittingVisit(false);
+    }
+  };
 
   const handleMarkDone = async (ev: any) => {
     try {
@@ -212,23 +276,33 @@ function CalendarPage() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-1 border rounded-lg bg-card p-0.5">
+        <div className="flex items-center gap-2">
           <Button
-            variant={currentView === "agenda" ? "secondary" : "ghost"}
             size="sm"
-            onClick={() => setCurrentView("agenda")}
-            className="h-7 text-xs px-3"
+            onClick={() => setShowAddVisitModal(true)}
+            className="h-8 text-xs font-bold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
           >
-            Agenda List
+            <Plus className="h-3.5 w-3.5" /> Schedule Site Visit
           </Button>
-          <Button
-            variant={currentView === "month" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => setCurrentView("month")}
-            className="h-7 text-xs px-3"
-          >
-            Monthly Calendar
-          </Button>
+
+          <div className="flex items-center gap-1 border rounded-lg bg-card p-0.5">
+            <Button
+              variant={currentView === "agenda" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setCurrentView("agenda")}
+              className="h-7 text-xs px-3"
+            >
+              Agenda List
+            </Button>
+            <Button
+              variant={currentView === "month" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setCurrentView("month")}
+              className="h-7 text-xs px-3"
+            >
+              Monthly Calendar
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -407,6 +481,134 @@ function CalendarPage() {
           </div>
         </div>
       )}
+
+      {/* ── Schedule Site Visit Modal ── */}
+      <Dialog open={showAddVisitModal} onOpenChange={setShowAddVisitModal}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <MapPin className="h-5 w-5 text-emerald-600" /> Schedule Site Visit
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleAddVisitSubmit} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="v-title" className="text-xs font-semibold">
+                Visit Title *
+              </Label>
+              <Input
+                id="v-title"
+                value={newVisitForm.title}
+                onChange={(e) => setNewVisitForm({ ...newVisitForm, title: e.target.value })}
+                placeholder="e.g. Villa Site Visit - Prestige Lakeside"
+                required
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="v-customer" className="text-xs font-semibold">
+                Select Customer / Lead (Optional)
+              </Label>
+              <select
+                id="v-customer"
+                value={newVisitForm.customerId}
+                onChange={(e) => setNewVisitForm({ ...newVisitForm, customerId: e.target.value })}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">-- Direct Visit (No Customer Linked) --</option>
+                {leads.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.phone}) - {l.projects?.name || "No Project"}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="v-date" className="text-xs font-semibold">
+                  Date *
+                </Label>
+                <Input
+                  id="v-date"
+                  type="date"
+                  value={newVisitForm.date}
+                  onChange={(e) => setNewVisitForm({ ...newVisitForm, date: e.target.value })}
+                  required
+                  className="h-9 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="v-time" className="text-xs font-semibold">
+                  Time *
+                </Label>
+                <Input
+                  id="v-time"
+                  type="time"
+                  value={newVisitForm.time}
+                  onChange={(e) => setNewVisitForm({ ...newVisitForm, time: e.target.value })}
+                  required
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="v-owner" className="text-xs font-semibold">
+                Assigned Sales Executive
+              </Label>
+              <select
+                id="v-owner"
+                value={newVisitForm.salesPerson}
+                onChange={(e) => setNewVisitForm({ ...newVisitForm, salesPerson: e.target.value })}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">-- Assign to Me / Unassigned --</option>
+                {salesPeople.map((u) => (
+                  <option key={u.id} value={u.name}>
+                    {u.name} ({u.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="v-details" className="text-xs font-semibold">
+                Notes / Special Requirements
+              </Label>
+              <Input
+                id="v-details"
+                value={newVisitForm.details}
+                onChange={(e) => setNewVisitForm({ ...newVisitForm, details: e.target.value })}
+                placeholder="e.g. Client interested in 3BHK corner unit, pickup required"
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddVisitModal(false)}
+                className="h-8 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isSubmittingVisit}
+                className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              >
+                {isSubmittingVisit ? "Scheduling..." : "Schedule Visit"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

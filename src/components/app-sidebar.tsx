@@ -96,6 +96,7 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       { to: "/followups", label: "Follow-ups", icon: BellRing },
       { to: "/sitevisits", label: "Site Visits", icon: MapPin },
       { to: "/projects", label: "Projects", icon: Briefcase },
+      { to: "/developers", label: "Developers", icon: Building2 },
       { to: "/revenue-ops", label: "Revenue Operations", icon: IndianRupee },
       { to: "/post-sales", label: "Post-Sales Ops", icon: ShieldCheck },
     ];
