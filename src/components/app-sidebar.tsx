@@ -68,11 +68,11 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
   useEffect(() => {
     if (proposedRole) {
       const emailMap: Record<AppRole, string> = {
-        super_admin: "nischith@blxreality.com",
-        admin: "admin@blxreality.com",
-        sales_executive: "dev@blxreality.com",
-        manager: "manager@blxreality.com",
-        marketing: "marketing@blxreality.com",
+        super_admin: "discoverblr@theblxrealty.com",
+        admin: "Santhosh@theblxrealty.com",
+        sales_executive: "Dev@theblxrealty.com",
+        manager: "santhosh.manager@theblxrealty.com",
+        marketing: "abhi@theblxrealty.com",
       };
       const filtered = crmUsers.filter((u) => u.role === proposedRole);
       if (filtered.length > 0) {
@@ -137,11 +137,11 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       if (isSupabaseConfigured) {
         // Find email for target role
         const emailMap: Record<AppRole, string> = {
-          super_admin: "nischith@blxreality.com",
-          admin: "admin@blxreality.com",
-          sales_executive: "dev@blxreality.com",
-          manager: "manager@blxreality.com",
-          marketing: "marketing@blxreality.com",
+          super_admin: "discoverblr@theblxrealty.com",
+          admin: "Santhosh@theblxrealty.com",
+          sales_executive: "Dev@theblxrealty.com",
+          manager: "santhosh.manager@theblxrealty.com",
+          marketing: "abhi@theblxrealty.com",
         };
 
         // Log in to target account to switch session
@@ -158,11 +158,11 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
       } else {
         // Mock credentials validation
         const validPasswords: Record<AppRole, string[]> = {
-          super_admin: ["Nischith@2026", "Madhu@2026"],
-          admin: ["Admin@2026"],
-          manager: ["Manager@2026"],
-          sales_executive: ["Dev@2026", "Vishal@2026", "Manoj@2026", "Tejasvijois@2026"],
-          marketing: ["Marketing@2026"],
+          super_admin: ["discoverblr@2026", "Madhuadmin@2026"],
+          admin: ["Santhosh@2026"],
+          manager: ["Santhosh@2026"],
+          sales_executive: ["Dev@2026", "Vishal@2026", "smanoj@2026"],
+          marketing: ["abhi@2026"],
         };
 
         const allowed = validPasswords[proposedRole] || [];
@@ -310,14 +310,14 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
                   <span className="font-bold text-foreground">
                     {proposedRole
                       ? proposedRole === "super_admin"
-                        ? "nischith@blxreality.com"
+                        ? "discoverblr@theblxrealty.com"
                         : proposedRole === "admin"
-                          ? "admin@blxreality.com"
+                          ? "Santhosh@theblxrealty.com"
                           : proposedRole === "manager"
-                            ? "manager@blxreality.com"
+                            ? "santhosh.manager@theblxrealty.com"
                             : proposedRole === "marketing"
-                              ? "marketing@blxreality.com"
-                              : "dev@blxreality.com"
+                              ? "abhi@theblxrealty.com"
+                              : "Dev@theblxrealty.com"
                       : ""}
                   </span>
                 </div>

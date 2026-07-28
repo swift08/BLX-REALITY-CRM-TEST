@@ -111,11 +111,11 @@ export function AppTopbar({
         await changePassword(currentPassword, newPassword);
       } else {
         const validPasswords: Record<AppRole, string[]> = {
-          super_admin: ["Nischith@2026", "Madhu@2026"],
-          admin: ["Admin@2026"],
-          manager: ["Manager@2026"],
-          sales_executive: ["Dev@2026", "Vishal@2026", "Manoj@2026", "Tejasvijois@2026"],
-          marketing: ["Marketing@2026"],
+          super_admin: ["discoverblr@2026", "Madhuadmin@2026"],
+          admin: ["Santhosh@2026"],
+          manager: ["Santhosh@2026"],
+          sales_executive: ["Dev@2026", "Vishal@2026", "smanoj@2026"],
+          marketing: ["abhi@2026"],
         };
         const allowed = validPasswords[role || "super_admin"] || [];
         if (allowed.length > 0 && !allowed.includes(currentPassword)) {
@@ -230,11 +230,11 @@ export function AppTopbar({
   useEffect(() => {
     if (proposedRole) {
       const emailMap: Record<AppRole, string> = {
-        super_admin: "nischith@blxreality.com",
-        admin: "admin@blxreality.com",
-        sales_executive: "dev@blxreality.com",
-        manager: "manager@blxreality.com",
-        marketing: "marketing@blxreality.com",
+        super_admin: "discoverblr@theblxrealty.com",
+        admin: "Santhosh@theblxrealty.com",
+        sales_executive: "Dev@theblxrealty.com",
+        manager: "santhosh.manager@theblxrealty.com",
+        marketing: "abhi@theblxrealty.com",
       };
       const filtered = crmUsers.filter((u) => u.role === proposedRole);
       if (filtered.length > 0) {
@@ -264,11 +264,11 @@ export function AppTopbar({
       if (isSupabaseConfigured) {
         // Authenticate with Supabase logic
         const emailMap: Record<AppRole, string> = {
-          super_admin: "nischith@blxreality.com",
-          admin: "admin@blxreality.com",
-          sales_executive: "dev@blxreality.com",
-          manager: "manager@blxreality.com",
-          marketing: "marketing@blxreality.com",
+          super_admin: "discoverblr@theblxrealty.com",
+          admin: "Santhosh@theblxrealty.com",
+          sales_executive: "Dev@theblxrealty.com",
+          manager: "santhosh.manager@theblxrealty.com",
+          marketing: "abhi@theblxrealty.com",
         };
         const targetEmail = selectedSwapEmail || emailMap[proposedRole];
 
@@ -283,11 +283,11 @@ export function AppTopbar({
       } else {
         // Validate mock credentials
         const validPasswords: Record<AppRole, string[]> = {
-          super_admin: ["Nischith@2026", "Madhu@2026"],
-          admin: ["Admin@2026"],
-          manager: ["Manager@2026"],
-          sales_executive: ["Dev@2026", "Vishal@2026", "Manoj@2026", "Tejasvijois@2026"],
-          marketing: ["Marketing@2026"],
+          super_admin: ["discoverblr@2026", "Madhuadmin@2026"],
+          admin: ["Santhosh@2026"],
+          manager: ["Santhosh@2026"],
+          sales_executive: ["Dev@2026", "Vishal@2026", "smanoj@2026"],
+          marketing: ["abhi@2026"],
         };
 
         const allowed = validPasswords[proposedRole] || [];

@@ -504,6 +504,7 @@ function TeamTab({ role, user }: { role: AppRole | null; user: any }) {
                             <option value="admin">Admin</option>
                             <option value="manager">Manager</option>
                             <option value="sales_executive">Sales Executive</option>
+                            <option value="marketing">Marketing</option>
                           </select>
                         ) : (
                           <span
@@ -612,6 +613,7 @@ function TeamTab({ role, user }: { role: AppRole | null; user: any }) {
                 {can(role).createAdmin() && <option value="admin">Admin</option>}
                 {can(role).createManager() && <option value="manager">Manager</option>}
                 <option value="sales_executive">Sales Executive</option>
+                <option value="marketing">Marketing</option>
               </select>
             </div>
             <DialogFooter>
