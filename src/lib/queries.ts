@@ -22,7 +22,9 @@ export type Stage =
   | "payment_completed"
   | "converted"
   | "closed"
-  | "lost";
+  | "lost"
+  | "junk"
+  | "not_interested";
 
 export type Temp = "hot" | "warm" | "cold";
 
@@ -239,6 +241,7 @@ export interface ProjectRow {
   project_size?: string;
   rera_number?: string;
   cover_image_url?: string;
+  inventory_notes?: string;
 }
 
 // ── Profit & Financial Helpers ─────────────────────────────────
@@ -1171,6 +1174,22 @@ export async function addProject(proj: any) {
 
 export async function updateProject(id: string, updates: any) {
   return callApi("updateProject", { id, updates });
+}
+
+export async function deleteProject(id: string) {
+  return callApi("deleteProject", { id });
+}
+
+export async function createFollowup(payload: {
+  lead_id: string;
+  title: string;
+  assigned_sales: string;
+  time: string;
+  priority: string;
+  type?: string;
+  details?: string;
+}) {
+  return callApi("createFollowup", payload);
 }
 
 export async function addUnit(unit: any) {

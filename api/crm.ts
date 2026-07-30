@@ -1533,6 +1533,44 @@ export default async function handler(req: any, res: any) {
         });
         return res.status(200).json(data);
       }
+      case "deleteProject": {
+        const { id } = payload;
+        const { error } = await supabase.from("projects").delete().eq("id", id);
+        if (error) return res.status(400).json({ error: error.message });
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "PROJECT_DELETE",
+          old_value: id,
+          new_value: "Deleted project",
+        });
+        return res.status(200).json({ success: true });
+      }
+      case "createFollowup": {
+        const { lead_id, title, assigned_sales, time, priority, type, details } = payload;
+        const { data, error } = await supabase
+          .from("followups")
+          .insert({
+            lead_id,
+            title,
+            assigned_sales: assigned_sales || actorName,
+            time,
+            priority: priority || "medium",
+            status: "pending",
+            details: details || "",
+          })
+          .select()
+          .single();
+        if (error) return res.status(400).json({ error: error.message });
+        await supabase.from("notifications").insert({
+          title: "📌 New Follow-up Assigned",
+          message: `Follow-up "${title}" assigned to ${assigned_sales || actorName} scheduled for ${new Date(time).toLocaleString()}`,
+          lead_id,
+          priority: priority || "medium",
+          role: "sales_executive",
+          assigned_to: assigned_sales || actorName,
+        });
+        return res.status(200).json(data);
+      }
       case "addUnit": {
         const { unit } = payload;
         const trimmedNumber = (unit.unit_number || "").toString().trim();

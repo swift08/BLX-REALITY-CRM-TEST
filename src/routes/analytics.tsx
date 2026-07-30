@@ -272,27 +272,39 @@ function AnalyticsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
+                <ResponsiveContainer width="100%" height={340}>
+                  <PieChart margin={{ top: 10, bottom: 25, left: 10, right: 10 }}>
                     <Pie
                       data={sourceData}
                       cx="50%"
-                      cy="45%"
-                      outerRadius={75}
-                      innerRadius={30}
+                      cy="40%"
+                      outerRadius={85}
+                      innerRadius={42}
+                      paddingAngle={2}
+                      minAngle={4}
                       dataKey="value"
-                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
-                      labelLine={true}
+                      label={({ percent }) => (percent >= 0.04 ? `${(percent * 100).toFixed(0)}%` : "")}
+                      labelLine={false}
                     >
                       {sourceData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(val: any) => [`${val} Leads`, "Count"]} />
+                    <Tooltip
+                      formatter={(val: any, name: any) => [
+                        `${val} Leads (${((val / (sourceData.reduce((s: any, d: any) => s + (d.value || 0), 0) || 1)) * 100).toFixed(1)}%)`,
+                        name,
+                      ]}
+                      contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
+                    />
                     <Legend
                       verticalAlign="bottom"
-                      height={36}
-                      formatter={(val: string) => <span className="text-[11px] font-medium">{val}</span>}
+                      align="center"
+                      iconType="circle"
+                      iconSize={8}
+                      formatter={(val: string) => (
+                        <span className="text-[10px] font-semibold text-foreground/80 mr-2">{val}</span>
+                      )}
                     />
                   </PieChart>
                 </ResponsiveContainer>

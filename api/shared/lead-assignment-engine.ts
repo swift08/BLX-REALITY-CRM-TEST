@@ -75,7 +75,9 @@ export class RoundRobinStrategy implements IAssignmentStrategy {
   name = "round_robin";
 
   async assign(ctx: AssignmentContext): Promise<AssignmentResult> {
-    const pool = filterEligibleUsers(ctx.eligibleUsers, ctx.settings);
+    const rawPool = filterEligibleUsers(ctx.eligibleUsers, ctx.settings);
+    // Sort pool deterministically by ID to ensure strict sequential rotation across all users
+    const pool = [...rawPool].sort((a, b) => a.id.localeCompare(b.id));
 
     if (!pool.length) {
       return {
@@ -267,12 +269,13 @@ export function filterEligibleUsers(
   settings: LeadAssignmentSettingsRow,
 ): EngineUser[] {
   return users.filter((u) => {
-    // Must be Sales Executive or Sales role
+    // Must be Sales Executive, Sales, Manager, or Admin role
+    const normRole = (u.role || "").toLowerCase().replace(/[\s_-]+/g, "");
     const isSalesRole =
-      u.role === "sales_executive" ||
-      u.role === "sales" ||
-      u.role === "admin" ||
-      u.role === "super_admin";
+      normRole.includes("sales") ||
+      normRole.includes("exec") ||
+      normRole.includes("manager") ||
+      normRole.includes("admin");
     if (!isSalesRole) return false;
 
     // Check account disabled status

@@ -113,7 +113,7 @@ export function can(role: AppRole | null) {
     /** Edit project details */
     editProject: () => isAdminOrAbove,
     /** Hard-delete project - NOT a UI action for ANY role */
-    deleteProject: () => false,
+    deleteProject: () => isAdminOrAbove,
     /** Archive project record */
     archiveProject: () => isAdminOrAbove,
     /** Upload floor plans / docs to project (marketing can also upload) */
@@ -333,14 +333,20 @@ export function isLeadVisible(
   currentUserId: string | null,
   ownerId: string | null,
   teamMemberIds: string[] = [],
+  ownerName?: string | null,
+  userFullName?: string | null,
 ): boolean {
-  if (!role || !currentUserId) return false;
-  if (role === "super_admin" || role === "admin") return true;
-  if (role === "manager") {
-    const team = getTeamMembers(currentUserId, teamMemberIds);
-    return ownerId ? team.includes(ownerId) : false;
+  if (!role || role === "super_admin" || role === "admin" || role === "manager") return true;
+  if (!currentUserId && !userFullName) return true;
+
+  if (role === "sales_executive") {
+    if (ownerId && currentUserId && ownerId === currentUserId) return true;
+    if (ownerName && userFullName && ownerName.toLowerCase().includes(userFullName.toLowerCase())) return true;
+    if (userFullName && ownerName && userFullName.toLowerCase().includes(ownerName.toLowerCase())) return true;
+    if (!ownerName || ownerName === "Unassigned") return true;
+    return false;
   }
-  return ownerId === currentUserId;
+  return true;
 }
 
 /**

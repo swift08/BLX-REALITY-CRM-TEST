@@ -22,6 +22,7 @@ import {
   useProjectConfigurations,
   addProjectConfiguration,
   deleteProjectConfiguration,
+  deleteProject,
   getProjectProfitRate,
   getCleanTimeline,
   formatINRWithUnits,
@@ -37,6 +38,7 @@ import {
   MapPin,
   Tag,
   Pencil,
+  Trash2,
   FileText,
   ExternalLink,
   Image,
@@ -50,7 +52,6 @@ import {
   AlertTriangle,
   CircleDollarSign,
   Ruler,
-  Trash2,
   User,
   Calendar,
   Home,
@@ -744,6 +745,24 @@ function ProjectsPage() {
     setEditOpen(true);
   };
 
+  const handleDeleteProject = async (projId: string, projName: string) => {
+    if (!window.confirm(`Are you sure you want to delete project "${projName}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await deleteProject(projId);
+      toast.success(`Project "${projName}" deleted successfully!`);
+      if (selectedProj?.id === projId) {
+        setSelectedProj(null);
+        setEditOpen(false);
+      }
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete project");
+    }
+  };
+
   // Photo management handlers
   const handleUploadProjectPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1184,8 +1203,12 @@ function ProjectsPage() {
                         <SelectValue placeholder="Select Type" />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="Flats">Flats</SelectItem>
+                        <SelectItem value="Villas">Villas</SelectItem>
+                        <SelectItem value="2BHK">2BHK</SelectItem>
+                        <SelectItem value="3BHK">3BHK</SelectItem>
+                        <SelectItem value="4BHK">4BHK</SelectItem>
                         <SelectItem value="Apartment">Apartment</SelectItem>
-                        <SelectItem value="Villa">Villa</SelectItem>
                         <SelectItem value="Plot">Plot</SelectItem>
                         <SelectItem value="Commercial">Commercial</SelectItem>
                         <SelectItem value="Mixed Development">Mixed Development</SelectItem>
@@ -1315,19 +1338,36 @@ function ProjectsPage() {
                   </span>
                 </div>
 
-                {/* Top Overlay: Pencil (Edit) icon button */}
+                {/* Top Overlay: Pencil (Edit) & Trash2 (Delete) icon buttons */}
                 {role !== "marketing" && (
-                  <Button
-                    variant="secondary"
-                    size="icon"
-                    className="absolute top-2.5 right-2.5 h-7 w-7 rounded-full bg-background/80 backdrop-blur-md border border-border/40 hover:bg-background shadow-xs text-foreground transition-all duration-300 z-10 hover:scale-105"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEditOpen(p);
-                    }}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
+                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1 z-10">
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-md border border-border/40 hover:bg-background shadow-xs text-foreground transition-all duration-300 hover:scale-105"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditOpen(p);
+                      }}
+                      title="Edit Project"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    {can(role).deleteProject() && (
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-7 w-7 rounded-full bg-rose-500/80 backdrop-blur-md border border-rose-500/40 hover:bg-rose-600 text-white shadow-xs transition-all duration-300 hover:scale-105"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProject(p.id, p.name);
+                        }}
+                        title="Delete Project"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                 )}
 
                 {/* Bottom Overlay Info Layer */}
@@ -1633,8 +1673,12 @@ function ProjectsPage() {
                           <SelectValue placeholder="Select Type" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="Flats">Flats</SelectItem>
+                          <SelectItem value="Villas">Villas</SelectItem>
+                          <SelectItem value="2BHK">2BHK</SelectItem>
+                          <SelectItem value="3BHK">3BHK</SelectItem>
+                          <SelectItem value="4BHK">4BHK</SelectItem>
                           <SelectItem value="Apartment">Apartment</SelectItem>
-                          <SelectItem value="Villa">Villa</SelectItem>
                           <SelectItem value="Plot">Plot</SelectItem>
                           <SelectItem value="Commercial">Commercial</SelectItem>
                           <SelectItem value="Mixed Development">Mixed Development</SelectItem>
@@ -2282,6 +2326,27 @@ function ProjectsPage() {
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {can(role).deleteProject() && selectedProj && (
+                <div className="p-6 border border-rose-500/20 rounded-xl bg-rose-500/[0.02] space-y-3">
+                  <div>
+                    <h4 className="font-bold text-sm text-rose-500 flex items-center gap-1.5">
+                      <Trash2 className="h-4 w-4" /> Danger Zone: Delete Project
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Permanently remove this project and its listings from the CRM system database.
+                    </p>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDeleteProject(selectedProj.id, selectedProj.name)}
+                    className="gap-1.5 font-bold text-xs"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete Project "{selectedProj.name}"
+                  </Button>
                 </div>
               )}
             </TabsContent>

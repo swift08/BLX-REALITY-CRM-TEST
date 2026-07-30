@@ -80,7 +80,9 @@ type Stage =
   | "payment_completed"
   | "converted"
   | "closed"
-  | "lost";
+  | "lost"
+  | "junk"
+  | "not_interested";
 type Temp = "hot" | "warm" | "cold";
 
 const stageLabels: Record<Stage, string> = {
@@ -100,6 +102,8 @@ const stageLabels: Record<Stage, string> = {
   converted: "Converted",
   closed: "Closed",
   lost: "Lost",
+  junk: "Junk",
+  not_interested: "Not Interested",
 };
 
 const tempLabels: Record<Temp, string> = {
@@ -213,7 +217,15 @@ function Dashboard() {
 
   // Metrics calculator
   const totalLeadsCount = rawCustomers.length;
-  const newLeadsCount = rawCustomers.filter((c) => c.stage === "new").length;
+  const nowMs = Date.now();
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  const newLeadsCount = rawCustomers.filter(
+    (c) =>
+      c.stage === "new" ||
+      (c.created_at &&
+        nowMs - new Date(c.created_at).getTime() < sevenDaysMs &&
+        (c.stage === "assigned" || c.stage === "contact_attempted")),
+  ).length;
   const activeLeadsCount = rawCustomers.filter(
     (c) => c.stage !== "converted" && c.stage !== "closed" && c.stage !== "lost",
   ).length;

@@ -37,8 +37,15 @@ export function TempBadge({ value }: { value: string }) {
 }
 
 export function StageBadge({ value }: { value: string }) {
+  const norm = value?.toLowerCase().replace(/\s+/g, "_");
+  let style = "bg-primary-soft text-primary";
+  if (norm === "junk") style = "bg-muted text-muted-foreground border border-border";
+  if (norm === "not_interested") style = "bg-rose-500/10 text-rose-500 border border-rose-500/20";
+  if (norm === "converted" || norm === "closed") style = "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20";
+  if (norm === "lost") style = "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20";
+
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-primary-soft text-primary">
+    <span className={cn("inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium", style)}>
       {value}
     </span>
   );
@@ -61,6 +68,8 @@ const STAGE_PROGRESS_MAP: Record<string, number> = {
   converted: 100,
   closed: 100,
   lost: 0,
+  junk: 0,
+  not_interested: 0,
 };
 
 export function LeadProgressBar({ stage }: { stage: string }) {

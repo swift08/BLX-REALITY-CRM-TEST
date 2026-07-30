@@ -4,9 +4,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useFollowups, completeFollowup, useSettings, addAuditLog } from "@/lib/queries";
+import {
+  useFollowups,
+  completeFollowup,
+  useSettings,
+  addAuditLog,
+  useCustomers,
+  useCRMUsers,
+  createFollowup,
+} from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 import { can } from "@/lib/permissions";
+import { formatLocalInputToIso, formatDisplayDateTime } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Check,
@@ -17,6 +26,9 @@ import {
   HelpCircle,
   Phone,
   Video,
+  Plus,
+  User,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 
 import {
@@ -28,6 +40,13 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/followups")({
   head: () => ({ meta: [{ title: "Follow-ups · BLX Realty CRM" }] }),
@@ -37,12 +56,65 @@ export const Route = createFileRoute("/followups")({
 function FollowupsPage() {
   const qc = useQueryClient();
   const { data: tasks = [], isLoading } = useFollowups();
+  const { data: customers = [] } = useCustomers();
+  const { data: crmUsers = [] } = useCRMUsers();
   const { data: settings } = useSettings();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const [q, setQ] = useState("");
+
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignForm, setAssignForm] = useState({
+    lead_id: "",
+    title: "",
+    assigned_sales: "",
+    time: "",
+    priority: "medium",
+    details: "",
+  });
+  const [assignBusy, setAssignBusy] = useState(false);
 
   const [completingTask, setCompletingTask] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const handleAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignForm.lead_id || !assignForm.title || !assignForm.time) {
+      toast.error("Please fill in all required fields (Customer, Title, Scheduled Time)");
+      return;
+    }
+    setAssignBusy(true);
+    try {
+      const timeIso = formatLocalInputToIso(assignForm.time) || new Date(assignForm.time).toISOString();
+      const currentUserName =
+        user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Unassigned";
+
+      await createFollowup({
+        lead_id: assignForm.lead_id,
+        title: assignForm.title,
+        assigned_sales: assignForm.assigned_sales || currentUserName,
+        time: timeIso,
+        priority: assignForm.priority,
+        details: assignForm.details,
+      });
+
+      toast.success("Follow-up assigned successfully!");
+      setAssignOpen(false);
+      setAssignForm({
+        lead_id: "",
+        title: "",
+        assigned_sales: "",
+        time: "",
+        priority: "medium",
+        details: "",
+      });
+      qc.invalidateQueries({ queryKey: ["followups"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to assign follow-up");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
   const [completeNotes, setCompleteNotes] = useState({
     discussionSummary: "",
     nextAction: "",
@@ -135,7 +207,7 @@ function FollowupsPage() {
           </span>
         </div>
       )}
-      {/* Search Header */}
+      {/* Search Header & Dedicated Assign Follow-up Action */}
       <div className="flex flex-row items-center justify-between gap-4 flex-wrap pb-2">
         <div className="flex items-center gap-2 h-9 px-3 rounded-lg bg-muted border flex-1 max-w-sm">
           <Search className="h-4 w-4 text-muted-foreground" />
@@ -146,6 +218,11 @@ function FollowupsPage() {
             placeholder="Search by customer name, title..."
           />
         </div>
+        {can(role).createFollowup() && (
+          <Button size="sm" onClick={() => setAssignOpen(true)} className="gap-2 font-bold">
+            <Plus className="h-4 w-4" /> Schedule / Assign Follow-up
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -185,7 +262,7 @@ function FollowupsPage() {
                   </div>
                   <h4 className="font-medium text-xs text-foreground leading-normal">{t.title}</h4>
                   <div className="text-[10px] text-rose-500 font-semibold flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Scheduled: {new Date(t.time).toLocaleString()}
+                    <Clock className="h-3 w-3" /> Scheduled: {formatDisplayDateTime(t.time)}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
                     Assigned: {t.assigned_sales}
@@ -252,7 +329,7 @@ function FollowupsPage() {
                       {t.title}
                     </h4>
                     <div className="text-[10px] text-primary font-semibold flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> Scheduled: {new Date(t.time).toLocaleString()}
+                      <Clock className="h-3 w-3" /> Scheduled: {formatDisplayDateTime(t.time)}
                     </div>
                     <div className="text-[10px] text-muted-foreground">
                       Assigned: {t.assigned_sales}
@@ -309,7 +386,7 @@ function FollowupsPage() {
                     {t.title}
                   </h4>
                   <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Scheduled: {new Date(t.time).toLocaleString()}
+                    <Clock className="h-3 w-3" /> Scheduled: {formatDisplayDateTime(t.time)}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
                     Assigned: {t.assigned_sales}
@@ -414,6 +491,119 @@ function FollowupsPage() {
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Assign / Schedule Follow-up Dialog Modal ─────────────────── */}
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="sm:max-w-[480px] text-left">
+          <DialogHeader>
+            <DialogTitle className="font-display font-bold text-base flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" /> Schedule & Assign Follow-up Task
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAssignSubmit} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Select Target Customer / Lead *</Label>
+              <Select
+                value={assignForm.lead_id}
+                onValueChange={(v) => setAssignForm({ ...assignForm, lead_id: v })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Search or select customer..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name} ({c.phone}) - {c.owner || "Unassigned"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Follow-up Action Title *</Label>
+              <Input
+                required
+                placeholder="e.g. Call client for site visit feedback"
+                value={assignForm.title}
+                onChange={(e) => setAssignForm({ ...assignForm, title: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Assigned Executive *</Label>
+                <Select
+                  value={assignForm.assigned_sales}
+                  onValueChange={(v) => setAssignForm({ ...assignForm, assigned_sales: v })}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select Owner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {crmUsers.map((u) => (
+                      <SelectItem key={u.id} value={u.name}>
+                        {u.name} ({u.role === "sales_executive" ? "Sales" : u.role})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Priority Level</Label>
+                <Select
+                  value={assignForm.priority}
+                  onValueChange={(v) => setAssignForm({ ...assignForm, priority: v })}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">🚨 High</SelectItem>
+                    <SelectItem value="medium">⚡ Medium</SelectItem>
+                    <SelectItem value="low">❄️ Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Scheduled Date & Time *</Label>
+              <input
+                type="datetime-local"
+                required
+                value={assignForm.time}
+                onChange={(e) => setAssignForm({ ...assignForm, time: e.target.value })}
+                className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Internal Remarks / Notes</Label>
+              <Input
+                placeholder="Key context or specific instruction for executive..."
+                value={assignForm.details}
+                onChange={(e) => setAssignForm({ ...assignForm, details: e.target.value })}
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setAssignOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" size="sm" disabled={assignBusy} className="font-bold">
+                {assignBusy ? "Saving Task..." : "Confirm & Assign"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </AppShell>

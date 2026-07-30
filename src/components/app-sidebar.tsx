@@ -86,7 +86,10 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
   const getNavItems = () => {
     // Marketing can ONLY see Projects
     if (role === "marketing") {
-      return [{ to: "/projects", label: "Projects", icon: Briefcase }];
+      return [
+        { to: "/projects", label: "Projects", icon: Briefcase },
+        { to: "/developers", label: "Developers", icon: Building2 },
+      ];
     }
 
     const items = [

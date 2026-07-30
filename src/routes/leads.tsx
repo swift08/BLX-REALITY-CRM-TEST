@@ -54,6 +54,7 @@ import {
   downloadRefundReceiptPdf,
 } from "@/lib/pdf-generator";
 import { useAuth, AppRole } from "@/hooks/use-auth";
+import { formatLocalInputToIso, formatDisplayDateTime } from "@/lib/utils";
 import {
   can,
   isLeadVisible,
@@ -137,6 +138,8 @@ const stageLabels: Record<Stage, string> = {
   converted: "Converted",
   closed: "Closed",
   lost: "Lost",
+  junk: "Junk",
+  not_interested: "Not Interested",
 };
 
 const tempLabels: Record<Temp, string> = { hot: "Hot", warm: "Warm", cold: "Cold" };
@@ -162,9 +165,9 @@ function CustomersPage() {
   const { data: crmUsers = [] } = useCRMUsers();
   const { role, user, userId } = useAuth();
 
-  // Scoped leads visibility filtering (uses the central, UUID-based permission helper)
+  const userFullName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "";
   const visibleCustomers = customers.filter((c) =>
-    isLeadVisible(role, userId, c.owner_id || "unassigned"),
+    isLeadVisible(role, userId, c.owner_id || null, [], c.owner, userFullName),
   );
 
   // Search & Filter state
@@ -1356,7 +1359,7 @@ function Customer360Workspace({
           : "outbound",
         summary: intSummary.trim(),
         details: intDetails.trim() || undefined,
-        next_followup: intScheduleFollowup ? intFupTime : null,
+        next_followup: intScheduleFollowup ? formatLocalInputToIso(intFupTime) : null,
         followup_title: intScheduleFollowup ? intFupTitle.trim() : null,
         followup_priority: intScheduleFollowup ? intFupPriority : "medium",
         outcome: intType === "call" ? intCallOutcome : undefined,
@@ -2772,7 +2775,7 @@ function Customer360Workspace({
 
                             {log.next_followup && (
                               <div className="text-[10px] font-bold text-primary flex items-center gap-1 bg-primary/5 px-2.5 py-1 w-max rounded-lg">
-                                📅 Next Callback: {new Date(log.next_followup).toLocaleString()}
+                                📅 Next Callback: {formatDisplayDateTime(log.next_followup)}
                               </div>
                             )}
                           </div>
@@ -2825,7 +2828,7 @@ function Customer360Workspace({
                                 )}
                               </div>
                               <div className="text-[10px] text-muted-foreground mt-1">
-                                Due: {new Date(f.time).toLocaleString()} · Owner: {f.assigned_sales}
+                                Due: {formatDisplayDateTime(f.time)} · Owner: {f.assigned_sales}
                               </div>
                             </div>
                             {(isPending || isOverdue) && (

@@ -41,6 +41,8 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
     projectId: "none",
     temperature: "warm" as "hot" | "warm" | "cold",
     owner: "Unassigned",
+    propertyType: "Flats",
+    inventoryNotes: "",
   });
   const [budgetNum, setBudgetNum] = useState("");
   const [budgetUnit, setBudgetUnit] = useState("Lakhs");
@@ -78,6 +80,8 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
       projectId: "none",
       temperature: "warm",
       owner: role === "sales_executive" ? userFullName : "Unassigned",
+      propertyType: "Flats",
+      inventoryNotes: "",
     });
     setBudgetNum("");
     setBudgetUnit("Lakhs");
@@ -121,7 +125,7 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
     if (e) e.preventDefault();
     setBusy(true);
     try {
-      await addMockLead(
+      const createdLead = await addMockLead(
         {
           name: form.name,
           phone: form.phone,
@@ -132,9 +136,17 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
           stage: "new",
           project_id: form.projectId,
           owner: form.owner,
+          property_type: form.propertyType,
+          inventory_notes: form.inventoryNotes || null,
         },
         forceDuplicate,
       );
+
+      if (form.inventoryNotes && (createdLead?.customerId || createdLead?.id)) {
+        const leadId = createdLead.customerId || createdLead.id;
+        const author = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "System";
+        await addLeadNote(leadId, `📦 Unit Inventory Note: ${form.inventoryNotes}`, author).catch(() => {});
+      }
 
       toast.success("Lead added successfully!");
       qc.invalidateQueries({ queryKey: ["leads"] });
@@ -347,29 +359,62 @@ export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {
                 </Select>
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="lbudget">Budget Description</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="lbudget"
-                  type="number"
-                  step="any"
-                  placeholder="e.g. 2.5 or 80"
-                  value={budgetNum}
-                  onChange={(e) => setBudgetNum(e.target.value)}
-                  className="flex-1"
-                />
-                <Select value={budgetUnit} onValueChange={setBudgetUnit}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue placeholder="Unit" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="lbudget">Budget Description</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="lbudget"
+                    type="number"
+                    step="any"
+                    placeholder="e.g. 2.5 or 80"
+                    value={budgetNum}
+                    onChange={(e) => setBudgetNum(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Select value={budgetUnit} onValueChange={setBudgetUnit}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue placeholder="Unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Lakhs">Lakhs</SelectItem>
+                      <SelectItem value="Cr">Crores (Cr)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Interested Property Type</Label>
+                <Select
+                  value={form.propertyType}
+                  onValueChange={(v) => setForm({ ...form, propertyType: v })}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Lakhs">Lakhs</SelectItem>
-                    <SelectItem value="Cr">Crores (Cr)</SelectItem>
+                    <SelectItem value="Flats">Flats</SelectItem>
+                    <SelectItem value="Villas">Villas</SelectItem>
+                    <SelectItem value="2BHK">2BHK</SelectItem>
+                    <SelectItem value="3BHK">3BHK</SelectItem>
+                    <SelectItem value="4BHK">4BHK</SelectItem>
+                    <SelectItem value="Plot">Plot</SelectItem>
+                    <SelectItem value="Commercial">Commercial</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
+            {form.projectId !== "none" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="linventory">Available Unit Inventory Notes (Manual)</Label>
+                <Input
+                  id="linventory"
+                  placeholder="e.g. Tower A: 4th Floor 3BHK available, Unit 402 reserved"
+                  value={form.inventoryNotes}
+                  onChange={(e) => setForm({ ...form, inventoryNotes: e.target.value })}
+                />
+              </div>
+            )}
             <DialogFooter className="pt-2">
               <Button type="submit" disabled={busy} className="w-full sm:w-auto">
                 {busy ? "Saving Lead..." : "Save Lead"}
