@@ -48,11 +48,23 @@ export function AppSidebar({ isOpen }: { isOpen?: boolean }) {
   const { role, user, signOut, changeRole } = useAuth();
   const navigate = useNavigate();
 
+  const userFullName = (user?.user_metadata?.full_name || user?.email?.split("@")[0] || "")
+    .toLowerCase()
+    .trim();
+  const userEmailPrefix = user?.email ? user.email.split("@")[0].toLowerCase().trim() : "";
+
   // Query followups to check for overdue items
   const { data: followups = [] } = useFollowups();
-  const overdueCount = followups.filter(
-    (f) => f.status === "overdue" || (f.status === "pending" && new Date(f.time) < new Date()),
-  ).length;
+  const overdueCount = followups.filter((f) => {
+    const isOverdue = f.status === "overdue" || (f.status === "pending" && new Date(f.time) < new Date());
+    if (!isOverdue) return false;
+    if (can(role).viewAllFollowups()) return true;
+    if (!f.assigned_sales) return false;
+    const sp = f.assigned_sales.toLowerCase().trim();
+    const matchesName = sp === userFullName || userFullName.includes(sp) || sp.includes(userFullName);
+    const matchesEmail = userEmailPrefix && (sp === userEmailPrefix || sp.includes(userEmailPrefix) || userEmailPrefix.includes(sp));
+    return matchesName || matchesEmail;
+  }).length;
 
   // Role switching validation states
   const [showVerify, setShowVerify] = useState(false);

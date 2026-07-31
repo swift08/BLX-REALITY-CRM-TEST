@@ -14,6 +14,7 @@ import {
   addMockLead,
 } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
+import { can } from "@/lib/permissions";
 import { toast } from "sonner";
 import {
   Calendar as CalendarIcon,
@@ -140,13 +141,18 @@ function fmtDateISO(d: Date) {
    Main Calendar Component
    ═══════════════════════════════════════════════════════════════ */
 function BusinessCalendar() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const queryClient = useQueryClient();
   const { data: events = [], isLoading } = useCalendarEvents();
   const { data: customers = [] } = useCustomers();
   const { data: crmUsers = [] } = useCRMUsers();
   const salesPeople = crmUsers.filter((u) => u.role === "sales_executive");
   const canManage = role === "super_admin" || role === "admin";
+
+  const userFullName = (user?.user_metadata?.full_name || user?.email?.split("@")[0] || "")
+    .toLowerCase()
+    .trim();
+  const userEmailPrefix = user?.email ? user.email.split("@")[0].toLowerCase().trim() : "";
 
   // State
   const [viewMode, setViewMode] = useState<ViewMode>("weekly");
@@ -259,6 +265,16 @@ function BusinessCalendar() {
   // Filtered Events
   const filteredEvents = useMemo(() => {
     return events.filter((e) => {
+      // Role-based visibility logic: Super Admin, Admin, Manager see ALL schedules
+      if (!can(role).viewAllFollowups()) {
+        // Sales Executive view: show only assigned events
+        if (!e.salesPerson) return false;
+        const sp = e.salesPerson.toLowerCase().trim();
+        const matchesName = sp === userFullName || userFullName.includes(sp) || sp.includes(userFullName);
+        const matchesEmail = userEmailPrefix && (sp === userEmailPrefix || sp.includes(userEmailPrefix) || userEmailPrefix.includes(sp));
+        if (!matchesName && !matchesEmail) return false;
+      }
+
       if (typeFilter !== "all" && e.type !== typeFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -269,7 +285,7 @@ function BusinessCalendar() {
       }
       return true;
     });
-  }, [events, typeFilter, searchQuery]);
+  }, [events, typeFilter, searchQuery, role, userFullName, userEmailPrefix]);
 
   // Map events by day ISO string
   const eventsByDayISO = useMemo(() => {

@@ -908,8 +908,12 @@ export function useNotifications() {
 }
 
 export function useFollowups() {
+  const activeRole =
+    typeof window !== "undefined"
+      ? localStorage.getItem("blx-realty-active-role") || "super_admin"
+      : "super_admin";
   return useQuery({
-    queryKey: ["followups"],
+    queryKey: ["followups", activeRole],
     refetchInterval: 10000,
     queryFn: async (): Promise<FollowupRow[]> => {
       const list = (await callApi("getFollowups")) as any[];
@@ -954,8 +958,12 @@ export function useWorkflowRules() {
 }
 
 export function useCalendarEvents() {
+  const activeRole =
+    typeof window !== "undefined"
+      ? localStorage.getItem("blx-realty-active-role") || "super_admin"
+      : "super_admin";
   return useQuery({
-    queryKey: ["calendar-events"],
+    queryKey: ["calendar-events", activeRole],
     queryFn: async () => {
       return callApi("getCalendarEvents") as Promise<CalendarEvent[]>;
     },

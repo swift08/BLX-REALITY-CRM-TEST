@@ -149,12 +149,52 @@ function FollowupsPage() {
     }
   };
 
-  const filteredTasks = tasks.filter(
-    (t) =>
-      !q ||
-      t.customer_name.toLowerCase().includes(q.toLowerCase()) ||
-      t.title.toLowerCase().includes(q.toLowerCase()),
-  );
+  const [simulateSalesPerson, setSimulateSalesPerson] = useState<string>("all");
+  const salesPeople = crmUsers.filter((u) => u.role === "sales_executive");
+  const originalRole = user?.user_metadata?.role || "sales_executive";
+  const isSimulating = role === "sales_executive" && originalRole !== "sales_executive";
+
+  const userFullName = (user?.user_metadata?.full_name || user?.email?.split("@")[0] || "")
+    .toLowerCase()
+    .trim();
+  const userEmailPrefix = user?.email ? user.email.split("@")[0].toLowerCase().trim() : "";
+
+  const isTaskVisible = (t: any) => {
+    // Search query filter
+    if (q) {
+      const qLower = q.toLowerCase();
+      const matchCust = t.customer_name?.toLowerCase().includes(qLower);
+      const matchTitle = t.title?.toLowerCase().includes(qLower);
+      const matchAssignee = t.assigned_sales?.toLowerCase().includes(qLower);
+      if (!matchCust && !matchTitle && !matchAssignee) return false;
+    }
+
+    // Role-based visibility logic: Super Admin, Admin, Manager see ALL schedules
+    if (can(role).viewAllFollowups()) {
+      return true;
+    }
+
+    // Sales Executive role:
+    if (isSimulating) {
+      if (simulateSalesPerson === "all") return true;
+      return (t.assigned_sales || "").toLowerCase().trim() === simulateSalesPerson.toLowerCase().trim();
+    }
+
+    // Real Sales Executive or Switched Sales Executive View:
+    if (!t.assigned_sales) return false;
+    const assigned = t.assigned_sales.toLowerCase().trim();
+
+    if (assigned === userFullName || userFullName.includes(assigned) || assigned.includes(userFullName)) {
+      return true;
+    }
+    if (userEmailPrefix && (assigned === userEmailPrefix || assigned.includes(userEmailPrefix) || userEmailPrefix.includes(assigned))) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const filteredTasks = tasks.filter(isTaskVisible);
 
   const now = new Date();
   const overdue = filteredTasks.filter(
@@ -197,6 +237,24 @@ function FollowupsPage() {
       title="Follow-up Reminders"
       subtitle="Maintain contact velocity with scheduled activities"
     >
+      {isSimulating && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg text-xs text-amber-500 font-semibold mb-4 text-left">
+          <span>Simulating Sales Executive View. Filter by Sales Owner:</span>
+          <select
+            value={simulateSalesPerson}
+            onChange={(e) => setSimulateSalesPerson(e.target.value)}
+            className="bg-card text-foreground border border-border rounded px-2 py-1 font-bold focus:outline-none text-[11px]"
+          >
+            <option value="all">-- Show All Sales Owners --</option>
+            {salesPeople.map((u) => (
+              <option key={u.id} value={u.name}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Role-Scope Context Banner */}
       {!can(role).viewAllFollowups() && (
         <div className="mb-4 flex items-center gap-3 px-4 py-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-700 dark:text-amber-400">
