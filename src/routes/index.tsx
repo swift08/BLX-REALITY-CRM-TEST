@@ -219,13 +219,13 @@ function Dashboard() {
   const totalLeadsCount = rawCustomers.length;
   const nowMs = Date.now();
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-  const newLeadsCount = rawCustomers.filter(
-    (c) =>
-      c.stage === "new" ||
-      (c.created_at &&
-        nowMs - new Date(c.created_at).getTime() < sevenDaysMs &&
-        (c.stage === "assigned" || c.stage === "contact_attempted")),
-  ).length;
+  const isNewLead = (c: any) =>
+    c.stage === "new" ||
+    (c.created_at &&
+      nowMs - new Date(c.created_at).getTime() < sevenDaysMs &&
+      (c.stage === "assigned" || c.stage === "contact_attempted"));
+
+  const newLeadsCount = rawCustomers.filter(isNewLead).length;
   const activeLeadsCount = rawCustomers.filter(
     (c) => c.stage !== "converted" && c.stage !== "closed" && c.stage !== "lost",
   ).length;
@@ -263,7 +263,7 @@ function Dashboard() {
 
     let custProfit = Math.max(completedBookingsProfit, singleBookingProfit);
 
-    if (custProfit === 0 && (c.stage === "converted" || c.stage === "Won")) {
+    if (custProfit === 0 && (c.stage === "converted" || (c.stage as string) === "Won")) {
       const projFinances = proj ? getProjectRevenueAndProfit(proj, [], [], [c]) : { profit: 0 };
       custProfit = projFinances.profit;
     }
@@ -347,6 +347,7 @@ function Dashboard() {
       | "visits_scheduled"
       | "visits_completed"
       | "revenue"
+      | "profit"
       | "conversion_pct";
     title: string;
     description: string;
@@ -450,7 +451,7 @@ function Dashboard() {
       case "total_leads":
         return rawCustomers;
       case "new_leads":
-        return rawCustomers.filter((c) => c.stage === "new");
+        return rawCustomers.filter(isNewLead);
       case "active_leads":
         return rawCustomers.filter(
           (c) => c.stage !== "converted" && c.stage !== "closed" && c.stage !== "lost",

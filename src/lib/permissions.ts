@@ -336,14 +336,28 @@ export function isLeadVisible(
   ownerName?: string | null,
   userFullName?: string | null,
 ): boolean {
-  if (!role || role === "super_admin" || role === "admin" || role === "manager") return true;
-  if (!currentUserId && !userFullName) return true;
+  if (!role || role === "super_admin" || role === "admin") return true;
+
+  if (role === "manager") {
+    if (teamMemberIds.length > 0) {
+      if (ownerId && teamMemberIds.includes(ownerId)) return true;
+      if (ownerName) {
+        const o = ownerName.toLowerCase().trim();
+        if (o !== "unassigned") return true;
+      }
+      return false;
+    }
+    return true;
+  }
 
   if (role === "sales_executive") {
+    if (!currentUserId && !userFullName) return false;
     if (ownerId && currentUserId && ownerId === currentUserId) return true;
-    if (ownerName && userFullName && ownerName.toLowerCase().includes(userFullName.toLowerCase())) return true;
-    if (userFullName && ownerName && userFullName.toLowerCase().includes(ownerName.toLowerCase())) return true;
-    if (!ownerName || ownerName === "Unassigned") return true;
+    if (ownerName && userFullName) {
+      const o = ownerName.toLowerCase().trim();
+      const u = userFullName.toLowerCase().trim();
+      if (o !== "unassigned" && (o === u || o.includes(u) || u.includes(o))) return true;
+    }
     return false;
   }
   return true;

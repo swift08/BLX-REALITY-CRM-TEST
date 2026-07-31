@@ -1328,9 +1328,9 @@ function ProjectsPage() {
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-primary/80 backdrop-blur-md border border-primary/20 text-white shadow-xs">
                     {p.property_type || "Flats / Villa"}
                   </span>
-                  {p.configurations && (
+                  {(p as any).configurations && (
                     <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-indigo-600/90 backdrop-blur-md border border-indigo-400/30 text-white shadow-xs">
-                      {p.configurations}
+                      {(p as any).configurations}
                     </span>
                   )}
                   <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider bg-emerald-600/90 backdrop-blur-md border border-emerald-400/30 text-white shadow-xs flex items-center gap-0.5">

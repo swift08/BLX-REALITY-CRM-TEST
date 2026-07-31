@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, AlertTriangle, User, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
-import { addMockLead, mergeLeads, useProjects, useSettings, useCRMUsers } from "@/lib/queries";
+import { addMockLead, addLeadNote, mergeLeads, useProjects, useSettings, useCRMUsers } from "@/lib/queries";
 import { useAuth } from "@/hooks/use-auth";
 
 export function NewLeadDialog({ trigger }: { trigger?: React.ReactNode }) {

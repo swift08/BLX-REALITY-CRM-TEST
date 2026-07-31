@@ -526,7 +526,7 @@ export function useLeads() {
       ? localStorage.getItem("blx-realty-active-role") || "super_admin"
       : "super_admin";
   return useQuery({
-    queryKey: ["leads"],
+    queryKey: ["leads", activeRole],
     queryFn: async (): Promise<Customer[]> => {
       const mapped = (await callApi("getLeads")) as Customer[];
 
@@ -602,19 +602,16 @@ export function useLeads() {
       });
 
       const userFullName = getCurrentUserFullName();
-      return resolved.filter((c) => {
-        const isVisible = isLeadVisible(
+      return resolved.filter((c) =>
+        isLeadVisible(
           activeRole as AppRole,
           currentUserId,
           c.owner_id || "unassigned",
-        );
-        const isNameMatch =
-          activeRole === "sales_executive" &&
-          c.owner &&
-          userFullName &&
-          c.owner.toLowerCase() === userFullName.toLowerCase();
-        return isVisible || isNameMatch;
-      });
+          [],
+          c.owner,
+          userFullName,
+        ),
+      );
     },
   });
 }

@@ -133,7 +133,7 @@ function ReportsPage() {
             b.unit_number,
             (b.amount || 0).toLocaleString("en-IN"),
             b.booking?.payment_status || "pending",
-            new Date(b.booking?.booking_date || b.created_at || Date.now()).toLocaleDateString(),
+            new Date(b.booking?.booking_date || (b as any).created_at || Date.now()).toLocaleDateString(),
           ]),
         };
 
