@@ -250,19 +250,13 @@ function Dashboard() {
 
   // Total Profit calculation based on Project Profit Margin / Commission %
   const totalProfitVal = rawCustomers.reduce((sum, c) => {
+    if (!((c.booking && c.booking.payment_status === "completed") || c.stage === "converted")) {
+      return sum;
+    }
     const proj = projects.find((p) => p.id === c.project_id || p.name === c.projects?.name);
     const profitRate = getProjectProfitRate(proj);
-
-    const completedBookingsProfit = (c.bookings || [])
-      .filter((b) => b.payment_status === "completed" || c.stage === "converted")
-      .reduce((s, b) => s + ((b.amount || 0) * profitRate) / 100, 0);
-
-    const singleBookingProfit = (c.booking && (c.booking.payment_status === "completed" || c.stage === "converted"))
-      ? ((c.booking.amount || 0) * profitRate) / 100
-      : 0;
-
-    const custProfit = Math.max(completedBookingsProfit, singleBookingProfit);
-    return sum + custProfit;
+    const amt = c.booking?.amount || 0;
+    return sum + (amt * profitRate) / 100;
   }, 0);
 
   // Monthly charts data
