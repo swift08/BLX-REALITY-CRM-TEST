@@ -261,13 +261,7 @@ function Dashboard() {
       ? ((c.booking.amount || 0) * profitRate) / 100
       : 0;
 
-    let custProfit = Math.max(completedBookingsProfit, singleBookingProfit);
-
-    if (custProfit === 0 && (c.stage === "converted" || (c.stage as string) === "Won")) {
-      const projFinances = proj ? getProjectRevenueAndProfit(proj, [], [], [c]) : { profit: 0 };
-      custProfit = projFinances.profit;
-    }
-
+    const custProfit = Math.max(completedBookingsProfit, singleBookingProfit);
     return sum + custProfit;
   }, 0);
 
