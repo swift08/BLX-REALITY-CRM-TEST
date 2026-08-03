@@ -593,52 +593,8 @@ export async function downloadPdfInvoice(
   overrideTemplateId?: string,
 ) {
   const htmlStr = generateInvoiceHtmlContent(data, settings, overrideTemplateId);
-
-  const container = document.createElement("div");
-  container.style.position = "fixed";
-  container.style.left = "-9999px";
-  container.style.top = "0";
-  container.style.width = "794px";
-  container.style.backgroundColor = "#ffffff";
-
-  container.innerHTML = htmlStr;
-  document.body.appendChild(container);
-
-  try {
-    await new Promise((r) => setTimeout(r, 250));
-
-    const canvas = await html2canvas(container, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: "#ffffff",
-      onclone: (clonedDoc) => {
-        const styleEls = clonedDoc.querySelectorAll("style");
-        styleEls.forEach((s) => {
-          if (s.textContent && s.textContent.includes("oklch")) {
-            s.textContent = s.textContent.replace(/oklch\([^)]+\)/g, "#6366f1");
-          }
-        });
-      },
-    });
-
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-    });
-
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-
-    const fileName = `Invoice_${data.customerName.replace(/\s+/g, "_")}.pdf`;
-    pdf.save(fileName);
-  } finally {
-    document.body.removeChild(container);
-  }
+  const fileName = `Invoice_${(data.customerName || "Customer").replace(/\s+/g, "_")}.pdf`;
+  await downloadHtmlAsPdf(htmlStr, fileName);
 }
 
 export interface PaymentReceiptData {
@@ -768,16 +724,27 @@ export async function downloadHtmlAsPdf(htmlStr: string, fileName: string) {
       logging: false,
       backgroundColor: "#ffffff",
       onclone: (clonedDoc) => {
-        // Remove style elements that contain unsupported oklch color rules causing html2canvas to crash
-        const styles = clonedDoc.querySelectorAll("style");
-        styles.forEach((s) => {
-          if (s.textContent?.includes("oklch")) {
-            s.remove();
+        // Remove style & stylesheet link elements from clonedDoc.
+        // html2canvas crashes when parsing CSS rules containing unsupported color functions like oklch() in app stylesheets.
+        // The container uses 100% self-contained inline CSS attributes.
+        const stylesAndLinks = clonedDoc.querySelectorAll("style, link[rel='stylesheet']");
+        stylesAndLinks.forEach((el) => el.remove());
+
+        // Sanitize inline style attributes on any elements containing oklch
+        const elementsWithStyle = clonedDoc.querySelectorAll("[style]");
+        elementsWithStyle.forEach((el) => {
+          const styleAttr = el.getAttribute("style");
+          if (styleAttr && styleAttr.toLowerCase().includes("oklch")) {
+            const cleanedStyle = styleAttr
+              .split(";")
+              .filter((rule) => !rule.toLowerCase().includes("oklch"))
+              .join(";");
+            el.setAttribute("style", cleanedStyle);
           }
         });
-        // Reset root style attributes if any contain oklch
+
         const root = clonedDoc.documentElement;
-        if (root && root.getAttribute("style")?.includes("oklch")) {
+        if (root && root.getAttribute("style")?.toLowerCase().includes("oklch")) {
           root.removeAttribute("style");
         }
       },
