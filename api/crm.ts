@@ -2506,8 +2506,8 @@ export default async function handler(req: any, res: any) {
           return res.status(400).json({ error: "Missing fileData or fileName" });
         }
 
-        // Ensure the 'documents' storage bucket exists
-        const BUCKET_NAME = "documents";
+        // Ensure the storage bucket exists (from env or default 'documents')
+        const BUCKET_NAME = process.env.SUPABASE_STORAGE_BUCKET || "documents";
         const { data: buckets } = await supabase.storage.listBuckets();
         const bucketExists = (buckets || []).some((b: any) => b.name === BUCKET_NAME);
         if (!bucketExists) {
@@ -2570,8 +2570,9 @@ export default async function handler(req: any, res: any) {
           return res.status(400).json({ error: "Missing file path" });
         }
 
+        const BUCKET_NAME = process.env.SUPABASE_STORAGE_BUCKET || "documents";
         const { data: signedData, error: signedErr } = await supabase.storage
-          .from("documents")
+          .from(BUCKET_NAME)
           .createSignedUrl(path, expiresIn || 3600); // Default 1 hour
 
         if (signedErr || !signedData?.signedUrl) {
