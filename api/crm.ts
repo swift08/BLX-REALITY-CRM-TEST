@@ -2506,18 +2506,19 @@ export default async function handler(req: any, res: any) {
           return res.status(400).json({ error: "Missing fileData or fileName" });
         }
 
-        // Ensure the storage bucket exists (public)
+        // Ensure the 'documents' storage bucket exists
+        const BUCKET_NAME = "documents";
         const { data: buckets } = await supabase.storage.listBuckets();
-        const bucketExists = (buckets || []).some((b: any) => b.name === "project-files");
+        const bucketExists = (buckets || []).some((b: any) => b.name === BUCKET_NAME);
         if (!bucketExists) {
-          const { error: bucketErr } = await supabase.storage.createBucket("project-files", {
-            public: true,
+          const { error: bucketErr } = await supabase.storage.createBucket(BUCKET_NAME, {
+            public: false,
             fileSizeLimit: 52428800, // 50 MB
           });
           if (bucketErr && !bucketErr.message.includes("already exists")) {
             return res
               .status(400)
-              .json({ error: "Failed to create storage bucket: " + bucketErr.message });
+              .json({ error: "Failed to verify storage bucket: " + bucketErr.message });
           }
         }
 
@@ -2525,12 +2526,13 @@ export default async function handler(req: any, res: any) {
         const base64Clean = fileData.replace(/^data:[^;]+;base64,/, "");
         const fileBuffer = Buffer.from(base64Clean, "base64");
 
-        // Generate unique storage path
+        // Generate unique storage path in documents bucket
         const sanitizedName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const storagePath = `${projectId || "general"}/${Date.now()}_${sanitizedName}`;
+        const folder = projectId || "general";
+        const storagePath = `${folder}/${Date.now()}_${sanitizedName}`;
 
         const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from("project-files")
+          .from(BUCKET_NAME)
           .upload(storagePath, fileBuffer, {
             contentType: mimeType || "application/octet-stream",
             upsert: true,
@@ -2540,17 +2542,45 @@ export default async function handler(req: any, res: any) {
           return res.status(400).json({ error: "Storage upload failed: " + uploadErr.message });
         }
 
-        // Get the permanent public URL
-        const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(storagePath);
+        // Generate secure access signed URL for private bucket access (1 hour validity)
+        const { data: signedData, error: signedErr } = await supabase.storage
+          .from(BUCKET_NAME)
+          .createSignedUrl(storagePath, 3600); // 1 hour validity (3600 seconds)
+
+        if (signedErr || !signedData?.signedUrl) {
+          return res.status(500).json({
+            error: "Failed to generate secure signed URL: " + (signedErr?.message || "Unknown error"),
+          });
+        }
+
+        const downloadUrl = signedData.signedUrl;
 
         await supabase.from("audit_logs").insert({
           user: actorName,
-          action: "PROJECT_FILE_UPLOAD",
+          action: "FILE_UPLOAD",
           old_value: "None",
-          new_value: fileName,
+          new_value: `${BUCKET_NAME}/${storagePath}`,
         });
 
-        return res.status(200).json({ url: urlData.publicUrl, path: storagePath });
+        return res.status(200).json({ url: downloadUrl, path: storagePath });
+      }
+      case "getDocumentDownloadUrl": {
+        const { path, expiresIn } = payload;
+        if (!path) {
+          return res.status(400).json({ error: "Missing file path" });
+        }
+
+        const { data: signedData, error: signedErr } = await supabase.storage
+          .from("documents")
+          .createSignedUrl(path, expiresIn || 3600); // Default 1 hour
+
+        if (signedErr || !signedData?.signedUrl) {
+          return res.status(500).json({
+            error: "Failed to generate secure signed URL: " + (signedErr?.message || "Unknown error"),
+          });
+        }
+
+        return res.status(200).json({ url: signedData.signedUrl });
       }
       case "addCalendarEvent": {
         const { event } = payload;

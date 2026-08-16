@@ -1258,6 +1258,13 @@ export async function uploadProjectFile(
   return callApi("uploadProjectFile", { fileData, fileName, mimeType, projectId });
 }
 
+export async function getDocumentDownloadUrl(
+  path: string,
+  expiresIn = 3600,
+): Promise<{ url: string }> {
+  return callApi("getDocumentDownloadUrl", { path, expiresIn });
+}
+
 export async function updateCalendarEvent(id: string, event: any) {
   return callApi("updateCalendarEvent", { id, event });
 }

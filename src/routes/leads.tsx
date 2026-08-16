@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,7 @@ import {
   deleteOpportunity,
   addCustomerDocument,
   uploadProjectFile,
+  getDocumentDownloadUrl,
   addLeadCommunicationLog,
   addLeadInteraction,
   bulkAssignLeads,
@@ -1177,6 +1178,7 @@ function Customer360Workspace({
   const [fileName, setFileName] = useState("");
   const [fileSize, setFileSize] = useState("2.5 MB");
   const [selectedDocFile, setSelectedDocFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Booking Unit Reservation State
   const [selectedProjForBooking, setSelectedProjForBooking] = useState(
@@ -1451,31 +1453,28 @@ function Customer360Workspace({
         reader.readAsDataURL(selectedDocFile);
       });
 
-      let finalUrl = base64Data;
-      try {
-        const res = await uploadProjectFile(
-          base64Data,
-          selectedDocFile.name,
-          selectedDocFile.type || "application/octet-stream",
-          customer.id,
-        );
-        if (res && res.url) {
-          finalUrl = res.url;
-        }
-      } catch (uploadErr) {
-        // Fall back to data URL
+      const res = await uploadProjectFile(
+        base64Data,
+        selectedDocFile.name,
+        selectedDocFile.type || "application/octet-stream",
+        `leads/${customer.id}`,
+      );
+
+      if (!res || !res.url) {
+        throw new Error("Failed to receive storage URL from Supabase.");
       }
 
       await addCustomerDocument(
         customer.id,
         selectedDocFile.name,
-        finalUrl,
+        res.url,
         selectedDocFile.size,
         docCategory,
       );
 
       setFileName("");
       setSelectedDocFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       toast.success("Document attached to profile folder.", { id: "doc-upload" });
       qc.invalidateQueries({ queryKey: ["leads"] });
     } catch (err: any) {
@@ -3469,6 +3468,7 @@ function Customer360Workspace({
                     <div className="space-y-1.5 col-span-2">
                       <Label>Select File</Label>
                       <Input
+                        ref={fileInputRef}
                         type="file"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
@@ -3512,15 +3512,30 @@ function Customer360Workspace({
                             </div>
                           </div>
                         </div>
-                        <a
-                          href={doc.url}
-                          download={doc.name}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[10px] text-primary font-bold hover:underline"
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              let targetUrl = doc.url;
+                              if (doc.url.includes("/documents/")) {
+                                const path = doc.url.split("/documents/")[1]?.split("?")[0];
+                                if (path) {
+                                  const res = await getDocumentDownloadUrl(path, 3600);
+                                  if (res?.url) targetUrl = res.url;
+                                }
+                              } else if (!doc.url.startsWith("http")) {
+                                const res = await getDocumentDownloadUrl(doc.url, 3600);
+                                if (res?.url) targetUrl = res.url;
+                              }
+                              window.open(targetUrl, "_blank", "noopener,noreferrer");
+                            } catch (e: any) {
+                              toast.error(e.message || "Failed to download document");
+                            }
+                          }}
+                          className="text-[10px] text-primary font-bold hover:underline bg-transparent border-0 p-0 cursor-pointer"
                         >
                           Download
-                        </a>
+                        </button>
                       </div>
                     ))}
                     {(!customer.documents || customer.documents.length === 0) && (
