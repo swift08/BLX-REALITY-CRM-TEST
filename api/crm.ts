@@ -1547,28 +1547,37 @@ export default async function handler(req: any, res: any) {
       }
       case "createFollowup": {
         const { lead_id, title, assigned_sales, time, priority, type, details } = payload;
+        const finalTitle =
+          details && details.trim() && !title.includes(details.trim())
+            ? `${title} - ${details.trim()}`
+            : title;
         const { data, error } = await supabase
           .from("followups")
           .insert({
             lead_id,
-            title,
+            title: finalTitle,
             assigned_sales: assigned_sales || actorName,
             time,
             priority: priority || "medium",
             status: "pending",
-            details: details || "",
           })
           .select()
           .single();
         if (error) return res.status(400).json({ error: error.message });
         await supabase.from("notifications").insert({
           title: "📌 New Follow-up Assigned",
-          message: `Follow-up "${title}" assigned to ${assigned_sales || actorName} scheduled for ${new Date(time).toLocaleString()}`,
+          message: `Follow-up "${finalTitle}" assigned to ${assigned_sales || actorName} scheduled for ${new Date(time).toLocaleString()}`,
           lead_id,
           priority: priority || "medium",
           role: "sales_executive",
           assigned_to: assigned_sales || actorName,
         });
+        await publishEvent(
+          "FOLLOWUP_CREATED",
+          lead_id,
+          { title: finalTitle, assigned_to: assigned_sales || actorName },
+          actorName,
+        );
         return res.status(200).json(data);
       }
       case "addUnit": {
