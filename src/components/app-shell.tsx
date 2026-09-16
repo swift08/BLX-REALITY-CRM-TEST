@@ -6,6 +6,9 @@ import { AppTopbar } from "./app-topbar";
 import { Watermark } from "./watermark";
 import { useSessionMonitor } from "@/hooks/use-session-monitor";
 import { securityConfig } from "@/lib/security.config";
+import { useAuth } from "@/hooks/use-auth";
+import { setRuntimeInvoicePermissions } from "@/lib/permissions";
+import { useInvoicePermissions, useUserInvoicePermissions } from "@/lib/queries";
 
 const isRouteSensitive = (pathname: string): boolean => {
   const sensitivePaths = [
@@ -32,6 +35,18 @@ export function AppShell({
 
   const navigate = useNavigate();
   const { location } = useRouterState();
+  const { userId } = useAuth();
+  const { data: invoiceRolePerms } = useInvoicePermissions();
+  const { data: invoiceUserPerms } = useUserInvoicePermissions();
+
+  // Keep Invoice CMS permission checks in sync with saved role/user matrices
+  useEffect(() => {
+    setRuntimeInvoicePermissions({
+      roleMatrix: invoiceRolePerms || [],
+      userOverrides: invoiceUserPerms || [],
+      currentUserId: userId,
+    });
+  }, [invoiceRolePerms, invoiceUserPerms, userId]);
 
   // Enforce session inactivity timeout & fingerprint binding
   useSessionMonitor();

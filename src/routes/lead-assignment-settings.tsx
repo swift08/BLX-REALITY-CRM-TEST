@@ -101,8 +101,11 @@ function LeadAssignmentSettingsPage() {
 
   useEffect(() => {
     if (settings) {
-      setStrategy(settings.distribution_strategy || "round_robin");
-      setAutoAssign(settings.auto_assign_leads ?? true);
+      const loadedStrategy = settings.distribution_strategy || "round_robin";
+      setStrategy(loadedStrategy);
+      setAutoAssign(
+        loadedStrategy === "manual" ? false : (settings.auto_assign_leads ?? true),
+      );
       setSkipPaused(settings.skip_paused_users ?? true);
       setSkipInactive(settings.skip_inactive_users ?? true);
       setEnableProjectRouting(settings.enable_project_routing ?? false);
@@ -138,20 +141,22 @@ function LeadAssignmentSettingsPage() {
   const handleSaveSettings = async () => {
     setSaving(true);
     try {
+      const isManual = strategy === "manual";
       await updateSettings.mutateAsync({
         distribution_strategy: strategy as any,
-        auto_assign_leads: autoAssign,
+        auto_assign_leads: isManual ? false : autoAssign,
         skip_paused_users: skipPaused,
         skip_inactive_users: skipInactive,
-        enable_project_routing: enableProjectRouting,
-        enable_source_routing: enableSourceRouting,
+        enable_project_routing: strategy === "project_based" ? true : enableProjectRouting,
+        enable_source_routing: strategy === "source_based" ? true : enableSourceRouting,
         allow_manager_override: allowManagerOverride,
         maintain_assignment_history: maintainHistory,
         source_routes: sourceRoutes,
-        sla_first_contact_mins: Number(slaContactMins),
-        sla_manager_escalate_hours: Number(slaEscalateHours),
-        sla_auto_reassign_hours: Number(slaReassignHours),
+        sla_first_contact_mins: Number(slaContactMins) || 30,
+        sla_manager_escalate_hours: Number(slaEscalateHours) || 2,
+        sla_auto_reassign_hours: Number(slaReassignHours) || 24,
       });
+      if (isManual) setAutoAssign(false);
       toast.success("Lead Assignment Engine settings updated successfully!");
     } catch (err: any) {
       toast.error(err.message || "Failed to update lead assignment settings.");
@@ -170,9 +175,57 @@ function LeadAssignmentSettingsPage() {
     }
   };
 
+  const handleSetUserStatus = async (
+    userId: string,
+    assignment_status: "available" | "paused" | "inactive",
+  ) => {
+    try {
+      await updateUserAssignment.mutateAsync({ id: userId, assignment_status });
+      toast.success(`Executive status set to ${assignment_status.toUpperCase()}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update status");
+    }
+  };
+
+  const handleToggleAssignedProject = async (
+    userId: string,
+    currentProjects: string[] | undefined,
+    projectId: string,
+  ) => {
+    const existing = Array.isArray(currentProjects) ? [...currentProjects] : [];
+    const next = existing.includes(projectId)
+      ? existing.filter((id) => id !== projectId)
+      : [...existing, projectId];
+    try {
+      await updateUserAssignment.mutateAsync({ id: userId, assigned_projects: next });
+      toast.success(
+        next.length === 0
+          ? "Executive now covers all projects"
+          : `Assigned projects updated (${next.length})`,
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update project assignment");
+    }
+  };
+
   const eligibleExecutives = crmUsers.filter(
-    (u) => u.role === "sales_executive" || u.role === "admin" || u.role === "super_admin",
+    (u) => u.role === "sales_executive" || u.role === "admin" || u.role === "super_admin" || u.role === "manager",
   );
+
+  if (settingsLoading || !settings) {
+    return (
+      <AppShell title="Lead Assignment Settings" subtitle="Loading assignment engine...">
+        <div className="flex items-center justify-center py-24">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <p className="text-sm font-medium text-muted-foreground">
+              Loading Lead Assignment Engine...
+            </p>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
@@ -216,7 +269,10 @@ function LeadAssignmentSettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Option 1: Round Robin */}
               <div
-                onClick={() => setStrategy("round_robin")}
+                onClick={() => {
+                  setStrategy("round_robin");
+                  setAutoAssign(true);
+                }}
                 className={`cursor-pointer rounded-xl border p-4 transition-all text-left space-y-2 ${
                   strategy === "round_robin"
                     ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-sm"
@@ -240,6 +296,7 @@ function LeadAssignmentSettingsPage() {
                 onClick={() => {
                   setStrategy("project_based");
                   setEnableProjectRouting(true);
+                  setAutoAssign(true);
                 }}
                 className={`cursor-pointer rounded-xl border p-4 transition-all text-left space-y-2 ${
                   strategy === "project_based"
@@ -266,6 +323,7 @@ function LeadAssignmentSettingsPage() {
                 onClick={() => {
                   setStrategy("source_based");
                   setEnableSourceRouting(true);
+                  setAutoAssign(true);
                 }}
                 className={`cursor-pointer rounded-xl border p-4 transition-all text-left space-y-2 ${
                   strategy === "source_based"
@@ -287,7 +345,10 @@ function LeadAssignmentSettingsPage() {
 
               {/* Option 4: Manual */}
               <div
-                onClick={() => setStrategy("manual")}
+                onClick={() => {
+                  setStrategy("manual");
+                  setAutoAssign(false);
+                }}
                 className={`cursor-pointer rounded-xl border p-4 transition-all text-left space-y-2 ${
                   strategy === "manual"
                     ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-sm"
@@ -306,9 +367,12 @@ function LeadAssignmentSettingsPage() {
                 </p>
               </div>
 
-              {/* Option 5: Capacity-Based (Future) */}
+              {/* Option 5: Capacity-Based */}
               <div
-                onClick={() => setStrategy("capacity_based")}
+                onClick={() => {
+                  setStrategy("capacity_based");
+                  setAutoAssign(true);
+                }}
                 className={`cursor-pointer rounded-xl border p-4 transition-all text-left space-y-2 ${
                   strategy === "capacity_based"
                     ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-sm"
@@ -319,9 +383,13 @@ function LeadAssignmentSettingsPage() {
                   <span className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     <Users className="h-4 w-4 text-primary" /> Capacity-Based (Workload)
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                    Phase 2 Ready
-                  </span>
+                  {strategy === "capacity_based" ? (
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                      Active
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Evaluates active workload (open leads count) and prioritizes executives with lower
@@ -331,6 +399,59 @@ function LeadAssignmentSettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Source-Based Routing Map */}
+        {(strategy === "source_based" || enableSourceRouting) && (
+          <Card className="border border-border bg-card shadow-md">
+            <CardHeader className="text-left border-b border-border/40 pb-4">
+              <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+                <Share2 className="h-4 w-4 text-primary" /> Source → Team Routing Map
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                Map each lead source channel to the role pool that should receive those leads.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.keys(sourceRoutes).map((source) => (
+                  <div key={source} className="space-y-1.5 text-left">
+                    <Label className="text-xs font-bold text-foreground">{source}</Label>
+                    <Select
+                      value={sourceRoutes[source] || "sales_executive"}
+                      onValueChange={(v) =>
+                        setSourceRoutes((prev) => ({
+                          ...prev,
+                          [source]: v,
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sales_executive">Sales Executive Pool</SelectItem>
+                        <SelectItem value="manager">Manager Pool</SelectItem>
+                        <SelectItem value="admin">Admin Pool</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Project-Based Routing Help */}
+        {strategy === "project_based" && (
+          <Card className="border border-primary/20 bg-primary/5 shadow-sm">
+            <CardContent className="pt-5 pb-5 text-left text-xs text-muted-foreground leading-relaxed">
+              <strong className="text-foreground">Project-Based Round Robin is active.</strong>{" "}
+              Assign specific projects to executives in the Availability Matrix below. Leads with a
+              project will rotate only among executives mapped to that project. If no executives are
+              mapped, the engine falls back to the full available pool.
+            </CardContent>
+          </Card>
+        )}
 
         {/* Global Controls & Engine Rules */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -515,48 +636,89 @@ function LeadAssignmentSettingsPage() {
                           </span>
                         </TableCell>
                         <TableCell className="text-left">
-                          {status === "available" && (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                              🟢 Available
-                            </span>
-                          )}
-                          {status === "paused" && (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-500 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
-                              ⏸ Paused
-                            </span>
-                          )}
-                          {status === "inactive" && (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-destructive bg-destructive/10 px-2.5 py-1 rounded-full border border-destructive/20">
-                              🔴 Inactive
-                            </span>
-                          )}
+                          <Select
+                            value={status}
+                            disabled={!!exec.isDisabled}
+                            onValueChange={(v) =>
+                              handleSetUserStatus(
+                                exec.id,
+                                v as "available" | "paused" | "inactive",
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-[140px] text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="available">🟢 Available</SelectItem>
+                              <SelectItem value="paused">⏸ Paused</SelectItem>
+                              <SelectItem value="inactive">🔴 Inactive</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </TableCell>
-                        <TableCell className="text-left">
-                          {exec.assigned_projects && exec.assigned_projects.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {exec.assigned_projects.map((pId) => {
-                                const proj = projects.find((p) => p.id === pId);
-                                return (
-                                  <span
-                                    key={pId}
-                                    className="text-[10px] font-medium bg-muted px-2 py-0.5 rounded border border-border"
-                                  >
-                                    {proj ? proj.name : pId}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground font-italic">
-                              All Projects
-                            </span>
-                          )}
+                        <TableCell className="text-left min-w-[220px]">
+                          <div className="space-y-2">
+                            {exec.assigned_projects && exec.assigned_projects.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {exec.assigned_projects.map((pId) => {
+                                  const proj = projects.find((p) => p.id === pId);
+                                  return (
+                                    <button
+                                      key={pId}
+                                      type="button"
+                                      onClick={() =>
+                                        handleToggleAssignedProject(
+                                          exec.id,
+                                          exec.assigned_projects,
+                                          pId,
+                                        )
+                                      }
+                                      className="text-[10px] font-medium bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                                      title="Click to remove project"
+                                    >
+                                      {proj ? proj.name : pId} ×
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">
+                                All Projects
+                              </span>
+                            )}
+                            {projects.length > 0 && (
+                              <Select
+                                onValueChange={(projectId) =>
+                                  handleToggleAssignedProject(
+                                    exec.id,
+                                    exec.assigned_projects,
+                                    projectId,
+                                  )
+                                }
+                              >
+                                <SelectTrigger className="h-8 text-[11px]">
+                                  <SelectValue placeholder="Add / toggle project..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {projects.map((p) => {
+                                    const selected = exec.assigned_projects?.includes(p.id);
+                                    return (
+                                      <SelectItem key={p.id} value={p.id}>
+                                        {selected ? "✓ " : ""}
+                                        {p.name}
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={exec.isDisabled}
+                            disabled={exec.isDisabled || status === "inactive"}
                             onClick={() => handleToggleUserStatus(exec.id, status)}
                             className="gap-1.5 text-xs font-semibold"
                           >

@@ -7,6 +7,7 @@
 import crypto from "node:crypto";
 import { getSupabaseClient, addLeadInternal } from "../shared/lead-service.js";
 import { metaLeadFieldMapping } from "../../src/config/metaLeadFieldMapping.js";
+import { safeLogger } from "../shared/safe-logger.js";
 
 // Disable automatic body parsing so we can compute correct HMAC SHA-256 signatures
 export const config = {
@@ -37,16 +38,16 @@ async function fetchWithRetry(url: string, maxAttempts = 5): Promise<any> {
       }
 
       const errorText = await response.text();
-      console.error(`Attempt ${attempt} failed with status ${response.status}: ${errorText}`);
+      safeLogger.error(`Graph API attempt ${attempt} failed with status ${response.status}`);
 
       if (response.status !== 429 && response.status < 500) {
-        throw new Error(`Graph API error: ${response.status} - ${errorText}`);
+        throw new Error(`Graph API error: ${response.status}`);
       }
     } catch (err: any) {
       if (attempt === maxAttempts) {
         throw err;
       }
-      console.warn(`Attempt ${attempt} error: ${err.message}. Retrying in ${delay}ms...`);
+      safeLogger.warn(`Graph API attempt ${attempt} error. Retrying in ${delay}ms...`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -55,7 +56,7 @@ async function fetchWithRetry(url: string, maxAttempts = 5): Promise<any> {
   }
 }
 
-const IS_DEV = process.env.NODE_ENV !== "production";
+const IS_PROD = process.env.NODE_ENV === "production";
 
 export default async function handler(req: any, res: any) {
   // Fast-fail env checks on startup
@@ -65,8 +66,7 @@ export default async function handler(req: any, res: any) {
   const graphVersion = process.env.META_GRAPH_VERSION || "v23.0";
 
   if (!appSecret || !verifyToken || !accessToken) {
-    // Log config error without exposing variable values
-    if (IS_DEV) console.error("Missing required Meta environment variables on startup.");
+    safeLogger.error("Missing required Meta environment variables on startup.");
     return res.status(500).json({
       error: "Configuration Error: Missing required environment variables.",
     });
@@ -78,34 +78,21 @@ export default async function handler(req: any, res: any) {
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    // Dev-only: log handshake details (never in production — token values are sensitive)
-    if (IS_DEV) console.log("Webhook GET received:", JSON.stringify({ mode, challenge }));
-
     if (mode === "subscribe" && token?.trim() === verifyToken?.trim()) {
-      if (IS_DEV) console.log("Meta Webhook handshake verified successfully.");
+      safeLogger.info("Meta Webhook handshake verified successfully.");
       res.setHeader("Content-Type", "text/plain");
       return res.status(200).send(challenge);
     }
 
-    // Do NOT log the received or expected token in production
-    if (IS_DEV) console.warn(`Meta Webhook handshake FAILED. Received token: "${token}"`);
+    safeLogger.warn("Meta Webhook handshake failed.");
     return res.status(403).send("Forbidden");
   }
 
   // 2. Incoming Event Ingestion (POST request)
   if (req.method === "POST") {
-    // Dev-only: verbose request trace (headers contain PII metadata, body contains lead data)
-    if (IS_DEV) {
-      console.log("===== META WEBHOOK HIT =====");
-      console.log("Method:", req.method);
-      console.log("Headers:", req.headers);
-    }
-
     let rawBody = "";
     try {
       rawBody = await getRawBody(req);
-      // Dev-only: raw body contains lead PII (name, phone, email) — never log in production
-      if (IS_DEV) console.log("Raw Body:", rawBody);
     } catch (err: any) {
       return res.status(400).json({ error: "Failed to read request body" });
     }
@@ -129,7 +116,7 @@ export default async function handler(req: any, res: any) {
           Buffer.from(computedSignature, "hex"),
         )
       ) {
-        console.warn("Invalid webhook signature received.");
+        safeLogger.warn("Invalid webhook signature received.");
         return res.status(401).json({ error: "Signature verification failed" });
       }
     } catch (_) {
@@ -171,8 +158,7 @@ export default async function handler(req: any, res: any) {
       .maybeSingle();
 
     if (existingLog) {
-      if (IS_DEV)
-        console.log(`Idempotency hit: Leadgen ID ${leadgenId} has already been processed.`);
+      safeLogger.info("Idempotency hit: leadgen already processed.");
       return res
         .status(200)
         .json({ success: true, message: "Lead already processed (idempotency match)" });
@@ -186,10 +172,7 @@ export default async function handler(req: any, res: any) {
       .maybeSingle();
 
     if (existingCust) {
-      if (IS_DEV)
-        console.log(
-          `Safety Idempotency hit: Customer already exists with meta_lead_id ${leadgenId}.`,
-        );
+      safeLogger.info("Safety idempotency hit: customer already exists for leadgen.");
       return res
         .status(200)
         .json({ success: true, message: "Lead already processed (customer match)" });
@@ -298,21 +281,21 @@ export default async function handler(req: any, res: any) {
         isDuplicate: result.isDuplicate,
       });
     } catch (err: any) {
-      console.error(`Meta lead ingestion failed for leadgen_id ${leadgenId}:`, err.message);
+      safeLogger.error("Meta lead ingestion failed.");
 
       // Log failure state in webhook logs table
       await supabase
         .from("meta_webhook_logs")
         .update({
           status: "FAILED",
-          error_message: err.message,
+          error_message: IS_PROD ? "Lead creation failed" : err.message,
           processed_at: new Date().toISOString(),
         })
         .eq("id", logId);
 
       return res.status(200).json({
         success: false,
-        error: err.message,
+        error: IS_PROD ? "Lead creation failed" : err.message,
         message: "Webhook processed but lead creation failed",
       });
     }

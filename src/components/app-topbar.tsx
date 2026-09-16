@@ -13,7 +13,6 @@ import {
 import {
   Bell,
   ShieldAlert,
-  Sparkles,
   UserCheck,
   AlertCircle,
   AlertTriangle,
@@ -605,7 +604,7 @@ export function AppTopbar({
           <div
             className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-semibold uppercase tracking-wider shadow-sm mr-2 transition-all duration-200 ${getRoleBadge(role)}`}
           >
-            {role === "super_admin" && <Sparkles className="h-3 w-3" />}
+            {role === "super_admin" && <ShieldCheck className="h-3 w-3" />}
             {role === "admin" && <ShieldAlert className="h-3 w-3" />}
             {role === "manager" && <UserCheck className="h-3 w-3" />}
             {role === "sales_executive" && <UserCheck className="h-3 w-3" />}

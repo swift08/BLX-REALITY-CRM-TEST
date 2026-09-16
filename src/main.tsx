@@ -12,6 +12,21 @@ import "@fontsource/plus-jakarta-sans/700.css";
 import "@fontsource/plus-jakarta-sans/800.css";
 import "./styles.css";
 
+// Production: silence browser console noise so secrets/PII never spill via leftover logs
+if (import.meta.env.PROD) {
+  const noop = () => {};
+  // eslint-disable-next-line no-console
+  console.log = noop;
+  // eslint-disable-next-line no-console
+  console.debug = noop;
+  // eslint-disable-next-line no-console
+  console.info = noop;
+  // eslint-disable-next-line no-console
+  console.table = noop as typeof console.table;
+  // eslint-disable-next-line no-console
+  console.dir = noop as typeof console.dir;
+}
+
 // Run client lockdown security systems
 initializeClientSecurity();
 

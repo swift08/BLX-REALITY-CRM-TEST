@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -37,7 +37,6 @@ import {
   History,
   Save,
   CheckCircle2,
-  Sparkles,
   Download,
   AlertTriangle,
   QrCode,
@@ -77,6 +76,8 @@ function InvoiceCMSPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("modern_executive");
   const [previewTab, setPreviewTab] = useState<"desktop" | "sample">("desktop");
   const [savingSection, setSavingSection] = useState<string | null>(null);
+  const userPermsDirtyRef = useRef(false);
+  const rolePermsDirtyRef = useRef(false);
 
 const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
   id: "inv_settings_default",
@@ -182,39 +183,46 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
   }, [settingsData, isSettingsLoading, formData]);
 
   useEffect(() => {
-    if (permissionsData) {
+    if (permissionsData && !rolePermsDirtyRef.current) {
       setPermissionMatrix(permissionsData);
     }
   }, [permissionsData]);
 
   useEffect(() => {
-    if (crmUsers.length > 0) {
-      const initialUserPerms: UserInvoicePermission[] = crmUsers.map((u) => {
-        const existing = userPermissionsData?.find((up) => up.user_id === u.id);
-        if (existing) return existing;
+    if (crmUsers.length === 0) return;
+    if (userPermsDirtyRef.current) return;
 
-        const roleDefault = permissionMatrix.find((p) => p.role === u.role);
+    const initialUserPerms: UserInvoicePermission[] = crmUsers.map((u) => {
+      const existing = userPermissionsData?.find((up) => up.user_id === u.id);
+      if (existing) {
         return {
-          user_id: u.id,
+          ...existing,
           user_name: u.name,
           role: u.role,
-          can_view_cms:
-            roleDefault?.can_view_cms ?? (u.role === "super_admin" || u.role === "admin"),
-          can_edit_company_info: roleDefault?.can_edit_company_info ?? u.role === "super_admin",
-          can_update_banking: roleDefault?.can_update_banking ?? u.role === "super_admin",
-          can_modify_tax: roleDefault?.can_modify_tax ?? u.role === "super_admin",
-          can_edit_terms:
-            roleDefault?.can_edit_terms ?? (u.role === "super_admin" || u.role === "admin"),
-          can_change_branding: roleDefault?.can_change_branding ?? u.role === "super_admin",
-          can_manage_templates: roleDefault?.can_manage_templates ?? u.role === "super_admin",
-          can_generate_invoices: roleDefault?.can_generate_invoices ?? u.role !== "marketing",
-          can_regenerate_invoices:
-            roleDefault?.can_regenerate_invoices ??
-            (u.role === "super_admin" || u.role === "admin" || u.role === "manager"),
         };
-      });
-      setUserPermissionList(initialUserPerms);
-    }
+      }
+
+      const roleDefault = permissionMatrix.find((p) => p.role === u.role);
+      return {
+        user_id: u.id,
+        user_name: u.name,
+        role: u.role,
+        can_view_cms:
+          roleDefault?.can_view_cms ?? (u.role === "super_admin" || u.role === "admin"),
+        can_edit_company_info: roleDefault?.can_edit_company_info ?? u.role === "super_admin",
+        can_update_banking: roleDefault?.can_update_banking ?? u.role === "super_admin",
+        can_modify_tax: roleDefault?.can_modify_tax ?? u.role === "super_admin",
+        can_edit_terms:
+          roleDefault?.can_edit_terms ?? (u.role === "super_admin" || u.role === "admin"),
+        can_change_branding: roleDefault?.can_change_branding ?? u.role === "super_admin",
+        can_manage_templates: roleDefault?.can_manage_templates ?? u.role === "super_admin",
+        can_generate_invoices: roleDefault?.can_generate_invoices ?? u.role !== "marketing",
+        can_regenerate_invoices:
+          roleDefault?.can_regenerate_invoices ??
+          (u.role === "super_admin" || u.role === "admin" || u.role === "manager"),
+      };
+    });
+    setUserPermissionList(initialUserPerms);
   }, [crmUsers, userPermissionsData, permissionMatrix]);
 
   if (isSettingsLoading || !formData) {
@@ -269,6 +277,7 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
   const handleSavePermissions = async () => {
     try {
       await updatePermissionsMutation.mutateAsync(permissionMatrix);
+      rolePermsDirtyRef.current = false;
       toast.success("Role permission matrix saved successfully!");
     } catch (err: any) {
       toast.error(err.message || "Failed to update role permissions.");
@@ -276,6 +285,7 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
   };
 
   const togglePermission = (roleName: string, permKey: keyof InvoiceRolePermission) => {
+    rolePermsDirtyRef.current = true;
     setPermissionMatrix((prev) =>
       prev.map((item) => {
         if (item.role === roleName) {
@@ -287,6 +297,7 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
   };
 
   const toggleUserPermission = (userId: string, permKey: keyof UserInvoicePermission) => {
+    userPermsDirtyRef.current = true;
     setUserPermissionList((prev) =>
       prev.map((item) => {
         if (item.user_id === userId) {
@@ -301,6 +312,7 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
     try {
       toast.loading("Saving granular team member invoice permissions...", { id: "u-perm" });
       await updateUserPermissionsMutation.mutateAsync(userPermissionList);
+      userPermsDirtyRef.current = false;
       toast.success("Granular team member invoice permissions updated successfully!", {
         id: "u-perm",
       });
@@ -344,7 +356,7 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
                   variant="outline"
                   className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
                 >
-                  <Sparkles className="h-3 w-3 mr-1" /> Configurable CMS
+                  Configurable CMS
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground">

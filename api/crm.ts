@@ -4,12 +4,54 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { addLeadInternal } from "./shared/lead-service.js";
+import { safeLogger } from "./shared/safe-logger.js";
 
+const IS_PROD = process.env.NODE_ENV === "production";
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error("Missing Supabase credentials in process.env!");
+}
+
+function sanitizeAuthSession(data: any) {
+  if (!data?.session) return { session: null, user: null };
+  const session = data.session;
+  const user = data.user || session.user || null;
+  return {
+    session: {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at,
+      expires_in: session.expires_in,
+      token_type: session.token_type || "bearer",
+      user: user
+        ? {
+            id: user.id,
+            email: user.email,
+            user_metadata: {
+              full_name: user.user_metadata?.full_name,
+              role: user.user_metadata?.role,
+              is_disabled: user.user_metadata?.is_disabled,
+            },
+            app_metadata: {
+              provider: user.app_metadata?.provider,
+            },
+          }
+        : null,
+    },
+    user: user
+      ? {
+          id: user.id,
+          email: user.email,
+          user_metadata: {
+            full_name: user.user_metadata?.full_name,
+            role: user.user_metadata?.role,
+            is_disabled: user.user_metadata?.is_disabled,
+          },
+        }
+      : null,
+  };
 }
 
 function getSupabaseClient() {
@@ -31,12 +73,144 @@ function getActorName(actorRole: string | undefined) {
   return userMap[actorRole || "super_admin"] || actorRole || "System";
 }
 
-const inMemoryPostSales = {
-  registrations: [] as any[],
-  possessions: [] as any[],
-  paymentSchedules: [] as any[],
-  refunds: [] as any[],
+/** Durable fallback store when invoice permission tables are missing from Supabase. */
+const INVOICE_PERMS_STORE_ID = "inv_permissions_store";
+const inMemoryInvoicePermissions = {
+  roleMatrix: null as any[] | null,
+  userPermissions: null as any[] | null,
 };
+
+const DEFAULT_INVOICE_ROLE_MATRIX = [
+  {
+    role: "super_admin",
+    can_view_cms: true,
+    can_edit_company_info: true,
+    can_update_banking: true,
+    can_modify_tax: true,
+    can_edit_terms: true,
+    can_change_branding: true,
+    can_manage_templates: true,
+    can_generate_invoices: true,
+    can_regenerate_invoices: true,
+  },
+  {
+    role: "admin",
+    can_view_cms: true,
+    can_edit_company_info: true,
+    can_update_banking: false,
+    can_modify_tax: true,
+    can_edit_terms: true,
+    can_change_branding: true,
+    can_manage_templates: true,
+    can_generate_invoices: true,
+    can_regenerate_invoices: true,
+  },
+  {
+    role: "manager",
+    can_view_cms: true,
+    can_edit_company_info: false,
+    can_update_banking: false,
+    can_modify_tax: false,
+    can_edit_terms: false,
+    can_change_branding: false,
+    can_manage_templates: false,
+    can_generate_invoices: true,
+    can_regenerate_invoices: true,
+  },
+  {
+    role: "sales_executive",
+    can_view_cms: false,
+    can_edit_company_info: false,
+    can_update_banking: false,
+    can_modify_tax: false,
+    can_edit_terms: false,
+    can_change_branding: false,
+    can_manage_templates: false,
+    can_generate_invoices: true,
+    can_regenerate_invoices: false,
+  },
+  {
+    role: "marketing",
+    can_view_cms: false,
+    can_edit_company_info: false,
+    can_update_banking: false,
+    can_modify_tax: false,
+    can_edit_terms: false,
+    can_change_branding: false,
+    can_manage_templates: false,
+    can_generate_invoices: false,
+    can_regenerate_invoices: false,
+  },
+];
+
+async function readInvoicePermsFallback(supabase: any): Promise<{
+  roleMatrix: any[] | null;
+  userPermissions: any[] | null;
+}> {
+  try {
+    const { data, error } = await supabase
+      .from("invoice_settings")
+      .select("company_info")
+      .eq("id", INVOICE_PERMS_STORE_ID)
+      .maybeSingle();
+    if (error || !data?.company_info) {
+      return {
+        roleMatrix: inMemoryInvoicePermissions.roleMatrix,
+        userPermissions: inMemoryInvoicePermissions.userPermissions,
+      };
+    }
+    const info = data.company_info;
+    return {
+      roleMatrix: Array.isArray(info.role_matrix)
+        ? info.role_matrix
+        : inMemoryInvoicePermissions.roleMatrix,
+      userPermissions: Array.isArray(info.user_permissions)
+        ? info.user_permissions
+        : inMemoryInvoicePermissions.userPermissions,
+    };
+  } catch {
+    return {
+      roleMatrix: inMemoryInvoicePermissions.roleMatrix,
+      userPermissions: inMemoryInvoicePermissions.userPermissions,
+    };
+  }
+}
+
+async function writeInvoicePermsFallback(
+  supabase: any,
+  patch: { roleMatrix?: any[]; userPermissions?: any[] },
+  actorName: string,
+) {
+  const current = await readInvoicePermsFallback(supabase);
+  const nextRole = patch.roleMatrix ?? current.roleMatrix ?? DEFAULT_INVOICE_ROLE_MATRIX;
+  const nextUsers = patch.userPermissions ?? current.userPermissions ?? [];
+
+  inMemoryInvoicePermissions.roleMatrix = nextRole;
+  inMemoryInvoicePermissions.userPermissions = nextUsers;
+
+  const payload = {
+    id: INVOICE_PERMS_STORE_ID,
+    company_info: {
+      role_matrix: nextRole,
+      user_permissions: nextUsers,
+    },
+    banking_details: {},
+    tax_statutory: {},
+    invoice_notes: {},
+    branding: {},
+    numbering: {},
+    payment_info: {},
+    default_template_id: "modern_executive",
+    updated_at: new Date().toISOString(),
+    updated_by: actorName,
+  };
+
+  const { error } = await supabase.from("invoice_settings").upsert(payload, { onConflict: "id" });
+  if (error) {
+    safeLogger.error("invoice_settings permission fallback upsert failed:", error.message);
+  }
+  return { roleMatrix: nextRole, userPermissions: nextUsers, persisted: !error };
+}
 
 async function publishEvent(type: string, customerId: string, payload: any, actorName: string) {
   const supabase = getSupabaseClient();
@@ -79,66 +253,83 @@ async function publishEvent(type: string, customerId: string, payload: any, acto
   if (!customer) return;
 
   switch (normalizedType) {
-    case "CUSTOMER_CREATED":
-      timelineMsg = `Customer dossier profile created from ${payload.source || customer.source}`;
-      auditAction = "CUSTOMER_CREATE";
-      auditNew = `${customer.name} (${customer.phone})`;
-      break;
-    case "OPPORTUNITY_ASSIGNED":
-      timelineMsg = `Opportunity owner assigned to ${payload.owner}`;
-      auditAction = "OPPORTUNITY_ASSIGN";
-      auditOld = payload.oldOwner || "Unassigned";
-      auditNew = payload.owner;
-      break;
     case "STAGE_CHANGED":
       timelineMsg = `Stage changed from ${payload.oldStage} to ${payload.newStage}`;
       if (payload.reason) timelineMsg += ` (Reason: ${payload.reason})`;
       auditAction = "OPPORTUNITY_STAGE_CHANGE";
-      auditOld = payload.oldStage;
-      auditNew = payload.newStage;
+      auditOld = `Previous stage: ${String(payload.oldStage || "unknown").replace(/_/g, " ")}`;
+      auditNew = `${actorName} moved ${customer.name} to stage "${String(payload.newStage || "").replace(/_/g, " ")}"${
+        payload.reason ? `. Reason: ${payload.reason}` : ""
+      }`;
+      break;
+    case "OPPORTUNITY_ASSIGNED":
+      timelineMsg = `Opportunity owner assigned to ${payload.owner}`;
+      auditAction = "OPPORTUNITY_ASSIGN";
+      auditOld = `Previous owner: ${payload.oldOwner || "Unassigned"}`;
+      auditNew = `${actorName} assigned lead ${customer.name} to ${payload.owner}`;
+      break;
+    case "CUSTOMER_CREATED":
+      timelineMsg = `Customer dossier profile created from ${payload.source || customer.source}`;
+      auditAction = "CUSTOMER_CREATE";
+      auditNew = `${actorName} created lead ${customer.name} (${customer.phone || "no phone"}) from ${payload.source || customer.source || "Unknown source"}`;
       break;
     case "CALL_LOGGED":
       timelineMsg = `Logged call: [${payload.outcome}] ${payload.summary}`;
       auditAction = "LOG_CALL";
-      auditNew = payload.outcome;
+      auditOld = `Lead: ${customer.name}`;
+      auditNew = `${actorName} logged a call for ${customer.name}. Outcome: ${payload.outcome}. Notes: ${payload.summary || "—"}`;
       break;
     case "WHATSAPP_LOGGED":
       timelineMsg = `Logged WhatsApp conversation details: ${payload.summary}`;
       auditAction = "LOG_WHATSAPP";
-      auditNew = payload.summary;
+      auditOld = `Lead: ${customer.name}`;
+      auditNew = `${actorName} logged WhatsApp activity for ${customer.name}: ${payload.summary || "—"}`;
       break;
     case "FOLLOWUP_CREATED":
       timelineMsg = `Scheduled follow-up: "${payload.title}"`;
       auditAction = "FOLLOWUP_CREATE";
-      auditNew = payload.title;
+      auditOld = `Lead: ${customer.name}`;
+      auditNew = `${actorName} scheduled follow-up "${payload.title}" for ${customer.name}`;
       break;
     case "FOLLOWUP_COMPLETED":
       timelineMsg = `Completed follow-up: "${payload.title}"`;
       auditAction = "FOLLOWUP_COMPLETE";
       auditOld = "Pending";
-      auditNew = "Completed";
+      auditNew = `${actorName} completed follow-up "${payload.title}" for ${customer.name}`;
       break;
     case "UNIT_RESERVED":
       timelineMsg = `Reserved Unit ${payload.unitNumber} - Booking lock activated`;
       auditAction = "UNIT_RESERVE";
-      auditNew = payload.unitNumber;
+      auditOld = `Lead: ${customer.name}`;
+      auditNew = `${actorName} reserved unit ${payload.unitNumber} for ${customer.name}`;
       break;
     case "BOOKING_VOIDED":
       timelineMsg = `Booking reservation voided on Unit ${payload.unitNumber}`;
       auditAction = "BOOKING_VOID";
       auditOld = "Reserved";
-      auditNew = "Available";
+      auditNew = `${actorName} cancelled booking for unit ${payload.unitNumber} (lead: ${customer.name}) and released it back to inventory`;
       break;
     case "PAYMENT_RECEIVED":
       timelineMsg = `Instalment payment cleared. Unit sold!`;
       auditAction = "PAYMENT_CLEAR";
-      auditOld = "Pending";
-      auditNew = "Completed";
+      auditOld = "Payment pending";
+      auditNew = `${actorName} marked payment completed for ${customer.name}${
+        payload.unitNumber ? ` (Unit ${payload.unitNumber})` : ""
+      }`;
       break;
     case "CUSTOMER_UPDATED":
       timelineMsg = `Customer profile updated by ${actorName}`;
       auditAction = "CUSTOMER_UPDATE";
-      auditNew = payload.content || "Profile fields updated";
+      auditOld = `Lead: ${customer.name}`;
+      auditNew = `${actorName} updated ${customer.name}: ${payload.content || "Profile fields updated"}`;
+      break;
+    case "DOCUMENT_UPLOADED":
+      timelineMsg = `Document uploaded: ${payload.name}`;
+      auditAction = "DOCUMENT_UPLOAD";
+      auditOld = `Lead: ${customer.name}`;
+      auditNew = `${actorName} uploaded document "${payload.name}"${
+        payload.category ? ` (${payload.category})` : ""
+      } for ${customer.name}`;
       break;
   }
 
@@ -148,7 +339,7 @@ async function publishEvent(type: string, customerId: string, payload: any, acto
       currentTimeline.push({ title: timelineMsg, time: now });
       await supabase.from("customers").update({ timeline: currentTimeline }).eq("id", customerId);
     } catch (e) {
-      console.error("Failed to update customer timeline:", e);
+      safeLogger.error("Failed to update customer timeline");
     }
   }
 
@@ -162,7 +353,7 @@ async function publishEvent(type: string, customerId: string, payload: any, acto
         new_value: auditNew,
       });
     } catch (e) {
-      console.error("Failed to insert audit log:", e);
+      safeLogger.error("Failed to insert audit log");
     }
   }
 }
@@ -286,27 +477,27 @@ export default async function handler(req: any, res: any) {
         }
         const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
         if (error) {
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: "Session refresh failed. Please sign in again." });
         }
-        return res.status(200).json(data);
+        return res.status(200).json(sanitizeAuthSession(data));
       }
       case "signIn": {
         const { email, password } = payload;
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          // Audit: login failure
+          // Audit: login failure — never store password or raw provider internals
           try {
             await supabase.from("audit_logs").insert({
               user: email || "unknown",
               action: "AUTH:LOGIN_FAILED",
               timestamp: new Date().toISOString(),
-              old_value: "Attempt",
-              new_value: error.message,
+              old_value: "Sign-in attempt",
+              new_value: `${email || "Someone"} tried to sign in but failed (wrong email or password).`,
             });
           } catch (_) {
             /* best-effort */
           }
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: "Invalid email or password." });
         }
         if (data.user?.user_metadata?.is_disabled) {
           return res
@@ -318,18 +509,21 @@ export default async function handler(req: any, res: any) {
           const loginUser = data.user;
           const loginName =
             loginUser?.user_metadata?.full_name || loginUser?.email?.split("@")[0] || email;
-          const loginRole = loginUser?.user_metadata?.role || "sales_executive";
+          const loginRole = String(loginUser?.user_metadata?.role || "sales_executive").replace(
+            /_/g,
+            " ",
+          );
           await supabase.from("audit_logs").insert({
             user: loginName,
             action: "AUTH:LOGIN_SUCCESS",
             timestamp: new Date().toISOString(),
-            old_value: loginRole,
-            new_value: loginUser?.email || email,
+            old_value: `Role: ${loginRole}`,
+            new_value: `${loginName} signed in successfully (${loginUser?.email || email}).`,
           });
         } catch (_) {
           /* best-effort */
         }
-        return res.status(200).json(data);
+        return res.status(200).json(sanitizeAuthSession(data));
       }
       case "signUp": {
         const { email, password, name, role } = payload;
@@ -590,7 +784,7 @@ export default async function handler(req: any, res: any) {
             .order("name", { ascending: true });
 
           if (error) {
-            console.warn(
+            safeLogger.error(
               "project_configurations table query failed, returning seeded defaults:",
               error.message,
             );
@@ -732,7 +926,7 @@ export default async function handler(req: any, res: any) {
             }
           }
         } catch (err) {
-          console.error("Failed to generate dynamic follow-up notifications:", err);
+          safeLogger.error("Failed to generate dynamic follow-up notifications:", err);
         }
 
         const { data, error } = await supabase
@@ -881,6 +1075,80 @@ export default async function handler(req: any, res: any) {
         });
         return res.status(200).json({ success: true });
       }
+      case "getUserPreferences": {
+        const uid = actorId || payload?.userId;
+        if (!uid) return res.status(400).json({ error: "Authenticated user required" });
+
+        const defaults = {
+          user_id: uid,
+          theme: "system",
+          active_role: null,
+          dashboard_widgets: [],
+          lead_filter_presets: [],
+          revops_workspace: {},
+        };
+
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .select("*")
+          .eq("user_id", uid)
+          .maybeSingle();
+
+        if (error) {
+          // Table may not exist yet — create empty row via upsert best-effort
+          safeLogger.error("getUserPreferences:", error.message);
+          return res.status(200).json(defaults);
+        }
+
+        return res.status(200).json(data ? { ...defaults, ...data } : defaults);
+      }
+      case "updateUserPreferences": {
+        const uid = actorId || payload?.userId;
+        if (!uid) return res.status(400).json({ error: "Authenticated user required" });
+        const { preferences } = payload;
+        if (!preferences || typeof preferences !== "object") {
+          return res.status(400).json({ error: "preferences object is required" });
+        }
+
+        const row = {
+          user_id: uid,
+          theme: preferences.theme ?? undefined,
+          active_role: preferences.active_role ?? undefined,
+          dashboard_widgets: preferences.dashboard_widgets ?? undefined,
+          lead_filter_presets: preferences.lead_filter_presets ?? undefined,
+          revops_workspace: preferences.revops_workspace ?? undefined,
+          updated_at: new Date().toISOString(),
+        };
+
+        // Strip undefined so we don't wipe unrelated columns
+        Object.keys(row).forEach((k) => {
+          if ((row as any)[k] === undefined) delete (row as any)[k];
+        });
+
+        const { data: existing } = await supabase
+          .from("user_preferences")
+          .select("*")
+          .eq("user_id", uid)
+          .maybeSingle();
+
+        const merged = { ...(existing || { user_id: uid }), ...row };
+
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .upsert(merged, { onConflict: "user_id" })
+          .select()
+          .single();
+
+        if (error) {
+          return res.status(400).json({
+            error:
+              error.message +
+              " — Run supabase_schema.sql to create the user_preferences table.",
+          });
+        }
+
+        return res.status(200).json({ success: true, preferences: data });
+      }
       case "getLeadAssignmentSettings": {
         const { getLeadAssignmentSettingsInternal } =
           await import("./shared/lead-assignment-engine.js");
@@ -889,33 +1157,34 @@ export default async function handler(req: any, res: any) {
       }
       case "updateLeadAssignmentSettings": {
         const { updates } = payload;
-        const { data: existing } = await supabase
-          .from("lead_assignment_settings")
-          .select("*")
-          .eq("id", "default_assignment_settings")
-          .single();
+        if (!updates || typeof updates !== "object") {
+          return res.status(400).json({ error: "updates object is required" });
+        }
 
-        const newSettings = {
-          ...(existing || {}),
-          ...updates,
-          updated_at: new Date().toISOString(),
-          updated_by: actorName,
-        };
+        const { saveLeadAssignmentSettingsInternal } =
+          await import("./shared/lead-assignment-engine.js");
+        const result = await saveLeadAssignmentSettingsInternal(updates, actorName);
 
-        const { error } = await supabase
-          .from("lead_assignment_settings")
-          .upsert({ id: "default_assignment_settings", ...newSettings });
-
-        if (error) return res.status(400).json({ error: error.message });
+        if (!result.persisted) {
+          return res.status(500).json({
+            error:
+              result.error ||
+              "Failed to save lead assignment settings. Ensure lead_assignment_settings table exists.",
+          });
+        }
 
         await supabase.from("audit_logs").insert({
           user: actorName,
           action: "UPDATE_LEAD_ASSIGNMENT_SETTINGS",
-          old_value: existing ? existing.distribution_strategy : "round_robin",
-          new_value: newSettings.distribution_strategy,
+          old_value: "Previous lead assignment settings",
+          new_value: `${actorName} updated lead assignment settings${
+            updates.distribution_strategy
+              ? ` (strategy: ${String(updates.distribution_strategy).replace(/_/g, " ")})`
+              : ""
+          }.`,
         });
 
-        return res.status(200).json({ success: true, settings: newSettings });
+        return res.status(200).json({ success: true, settings: result.settings });
       }
       case "getLeadAssignmentHistory": {
         const { leadId } = payload;
@@ -1077,11 +1346,25 @@ export default async function handler(req: any, res: any) {
         }
 
         await supabase.from("customers").update({ is_deleted: true }).eq("id", id);
-        await publishEvent("CUSTOMER_UPDATED", id, { content: "Lead profile archived" }, actorName);
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "LEAD_ARCHIVED",
+          timestamp: new Date().toISOString(),
+          old_value: `Active lead: ${customer.name}`,
+          new_value: `${actorName} archived lead "${customer.name}" (ID: ${customer.id}, Phone: ${customer.phone || "N/A"}). Profile moved to recycle bin.`,
+        });
+
+        await publishEvent(
+          "CUSTOMER_UPDATED",
+          id,
+          { content: `Lead archived by ${actorName}` },
+          actorName,
+        );
 
         await supabase.from("notifications").insert({
           title: "Customer Archived",
-          message: `${customer.name} profile has been archived.`,
+          message: `${customer.name} profile has been archived by ${actorName}.`,
           priority: "low",
           role: "admin",
           lead_id: id,
@@ -1091,13 +1374,52 @@ export default async function handler(req: any, res: any) {
       }
       case "restoreLead": {
         const { id } = payload;
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("id", id)
+          .maybeSingle();
+
         await supabase.from("customers").update({ is_deleted: false }).eq("id", id);
-        await publishEvent("CUSTOMER_UPDATED", id, { content: "Lead profile restored" }, actorName);
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "LEAD_RESTORED",
+          timestamp: new Date().toISOString(),
+          old_value: "In recycle bin",
+          new_value: `${actorName} restored lead "${customer?.name || id}" (ID: ${id}) back to the active customer list.`,
+        });
+
+        await publishEvent(
+          "CUSTOMER_UPDATED",
+          id,
+          { content: `Lead restored by ${actorName}` },
+          actorName,
+        );
         return res.status(200).json({ success: true });
       }
       case "permanentlyDeleteLead": {
         const { id } = payload;
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("id, name, phone, email, source")
+          .eq("id", id)
+          .maybeSingle();
+
+        const label = customer
+          ? `"${customer.name}" (ID: ${customer.id}, Phone: ${customer.phone || "N/A"})`
+          : `ID: ${id}`;
+
         await supabase.from("customers").delete().eq("id", id);
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "LEAD_PERMANENTLY_DELETED",
+          timestamp: new Date().toISOString(),
+          old_value: `Lead existed: ${label}`,
+          new_value: `${actorName} permanently deleted lead ${label}. This cannot be undone.`,
+        });
+
         return res.status(200).json({ success: true });
       }
       case "mergeLeads": {
@@ -1329,7 +1651,7 @@ export default async function handler(req: any, res: any) {
 
           if (error) throw error;
         } catch (dbErr: any) {
-          console.warn(
+          safeLogger.error(
             "Failed to insert into interactions table, falling back to legacy tables:",
             dbErr.message,
           );
@@ -2025,10 +2347,17 @@ export default async function handler(req: any, res: any) {
         }
 
         // LOCK THE BOOKING to prevent unauthorized modifications
-        await supabase
-          .from("bookings")
-          .update({ is_locked: true, primary_invoice_id: invData.id })
-          .eq("id", bookingId);
+        try {
+          const { error: lockErr } = await supabase
+            .from("bookings")
+            .update({ is_locked: true, primary_invoice_id: invData.id })
+            .eq("id", bookingId);
+          if (lockErr) {
+            safeLogger.error("Booking lock columns missing/unavailable:", lockErr.message);
+          }
+        } catch (_) {
+          /* best-effort lock for older schemas */
+        }
 
         await supabase.from("audit_logs").insert({
           user: actorName,
@@ -2049,6 +2378,12 @@ export default async function handler(req: any, res: any) {
           .select("*, bookings(*)")
           .eq("id", invoiceId)
           .maybeSingle();
+
+        if (!inv) {
+          return res.status(400).json({
+            error: "Invoice not found. Issue a tax invoice before recording payment.",
+          });
+        }
 
         const paymentAmount = Number(amount);
         const receiptNumber = `RCPT-2026-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -2072,9 +2407,25 @@ export default async function handler(req: any, res: any) {
             .select()
             .single();
 
+          if (payErr) throw payErr;
           payRecord = insertedPay;
         } catch (e: any) {
-          payRecord = { id: `pay-${Date.now()}`, invoice_id: invoiceId, amount: paymentAmount };
+          // Fallback insert with minimal columns for older schemas
+          const { data: simplePay } = await supabase
+            .from("payments")
+            .insert({
+              invoice_id: invoiceId,
+              amount: paymentAmount,
+              reference:
+                reference || `TXN-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+            })
+            .select()
+            .single();
+          payRecord = simplePay || {
+            id: `pay-${Date.now()}`,
+            invoice_id: invoiceId,
+            amount: paymentAmount,
+          };
         }
 
         const { data: allPayments } = await supabase
@@ -2082,7 +2433,13 @@ export default async function handler(req: any, res: any) {
           .select("amount")
           .eq("invoice_id", invoiceId);
 
-        const totalPaid = (allPayments || []).reduce((sum, p) => sum + Number(p.amount || 0), 0) + (payRecord ? 0 : paymentAmount);
+        const paidFromRows = (allPayments || []).reduce(
+          (sum, p) => sum + Number(p.amount || 0),
+          0,
+        );
+        // If the new payment isn't visible yet in select, include it once
+        const alreadyCounted = (allPayments || []).length > 0 && payRecord;
+        const totalPaid = alreadyCounted ? paidFromRows : paidFromRows + paymentAmount;
         const invTotal = Number(inv?.amount || paymentAmount);
         const outstanding = Math.max(0, invTotal - totalPaid);
 
@@ -2155,54 +2512,110 @@ export default async function handler(req: any, res: any) {
       case "getUserInvoicePermissions": {
         try {
           const { data, error } = await supabase.from("user_invoice_permissions").select("*");
-          if (error) throw error;
-          return res.status(200).json(data || []);
-        } catch (e: any) {
-          return res.status(200).json([]);
+          if (!error && data && data.length > 0) {
+            return res.status(200).json(data);
+          }
+        } catch (_) {
+          /* fall through to durable fallback */
         }
+        const fallback = await readInvoicePermsFallback(supabase);
+        return res.status(200).json(fallback.userPermissions || []);
       }
       case "updateUserInvoicePermissions": {
+        if (actorRole !== "super_admin") {
+          return res
+            .status(403)
+            .json({ error: "Only Super Admin can modify team member invoice permissions." });
+        }
         const { userPermissions } = payload;
         if (!Array.isArray(userPermissions)) {
           return res.status(400).json({ error: "userPermissions array is required" });
         }
 
+        const preparedUsers = userPermissions.map((up: any) => ({
+          user_id: up.user_id,
+          user_name: up.user_name,
+          role: up.role,
+          can_view_cms: !!up.can_view_cms,
+          can_edit_company_info: !!up.can_edit_company_info,
+          can_update_banking: !!up.can_update_banking,
+          can_modify_tax: !!up.can_modify_tax,
+          can_edit_terms: !!up.can_edit_terms,
+          can_change_branding: !!up.can_change_branding,
+          can_manage_templates: !!up.can_manage_templates,
+          can_generate_invoices: !!up.can_generate_invoices,
+          can_regenerate_invoices: !!up.can_regenerate_invoices,
+          updated_at: new Date().toISOString(),
+          updated_by: actorName,
+        }));
+
+        let tableOk = true;
         try {
-          for (const up of userPermissions) {
-            await supabase.from("user_invoice_permissions").upsert(up, { onConflict: "user_id" });
+          for (const up of preparedUsers) {
+            const { error } = await supabase
+              .from("user_invoice_permissions")
+              .upsert(up, { onConflict: "user_id" });
+            if (error) {
+              tableOk = false;
+              break;
+            }
           }
-
-          await supabase.from("audit_logs").insert({
-            user: actorName,
-            action: "USER_INVOICE_PERMISSIONS_UPDATED",
-            old_value: "USER_PERMISSIONS",
-            new_value: `Updated granular invoice permissions for ${userPermissions.length} team members`,
-          });
-
-          return res.status(200).json({ success: true });
-        } catch (err: any) {
-          return res.status(200).json({ success: true, mockUpdated: true });
+        } catch (_) {
+          tableOk = false;
         }
+
+        if (!tableOk) {
+          const result = await writeInvoicePermsFallback(
+            supabase,
+            { userPermissions: preparedUsers },
+            actorName,
+          );
+          if (!result.persisted && !inMemoryInvoicePermissions.userPermissions) {
+            return res.status(500).json({
+              error:
+                "Failed to save user invoice permissions. Ensure user_invoice_permissions or invoice_settings table exists.",
+            });
+          }
+        } else {
+          // Keep fallback in sync so reads stay consistent across environments
+          await writeInvoicePermsFallback(
+            supabase,
+            { userPermissions: preparedUsers },
+            actorName,
+          );
+        }
+
+        await supabase.from("audit_logs").insert({
+          user: actorName,
+          action: "USER_INVOICE_PERMISSIONS_UPDATED",
+          old_value: "USER_PERMISSIONS",
+          new_value: `Updated granular invoice permissions for ${preparedUsers.length} team members`,
+        });
+
+        return res.status(200).json({ success: true, userPermissions: preparedUsers });
       }
       case "getPostSalesOperations": {
         try {
-          const { data: regs } = await supabase.from("registrations").select("*");
-          const { data: poss } = await supabase.from("possessions").select("*");
-          const { data: scheds } = await supabase.from("payment_schedules").select("*");
-          const { data: ref } = await supabase.from("refunds").select("*");
+          const { data: regs, error: rErr } = await supabase.from("registrations").select("*");
+          const { data: poss, error: pErr } = await supabase.from("possessions").select("*");
+          const { data: scheds, error: sErr } = await supabase.from("payment_schedules").select("*");
+          const { data: ref, error: fErr } = await supabase.from("refunds").select("*");
+
+          if (rErr || pErr || sErr || fErr) {
+            safeLogger.error("Post-sales table read warning:", rErr || pErr || sErr || fErr);
+          }
 
           return res.status(200).json({
-            registrations: [...(regs || []), ...inMemoryPostSales.registrations],
-            possessions: [...(poss || []), ...inMemoryPostSales.possessions],
-            payment_schedules: [...(scheds || []), ...inMemoryPostSales.paymentSchedules],
-            refunds: [...(ref || []), ...inMemoryPostSales.refunds],
+            registrations: regs || [],
+            possessions: poss || [],
+            payment_schedules: scheds || [],
+            refunds: ref || [],
           });
         } catch (e: any) {
-          return res.status(200).json({
-            registrations: inMemoryPostSales.registrations,
-            possessions: inMemoryPostSales.possessions,
-            payment_schedules: inMemoryPostSales.paymentSchedules,
-            refunds: inMemoryPostSales.refunds,
+          return res.status(500).json({
+            error:
+              e.message ||
+              "Failed to load post-sales data from Supabase. Ensure registrations/possessions/payment_schedules/refunds tables exist.",
           });
         }
       }
@@ -2278,14 +2691,11 @@ export default async function handler(req: any, res: any) {
 
           return res.status(200).json({ success: true, registration: regData });
         } catch (err: any) {
-          // Graceful fallback if registrations table doesn't exist in Supabase yet
-          const existingIdx = inMemoryPostSales.registrations.findIndex(r => r.booking_id === bookingId);
-          if (existingIdx >= 0) {
-            inMemoryPostSales.registrations[existingIdx] = mockRegData;
-          } else {
-            inMemoryPostSales.registrations.push(mockRegData);
-          }
-          return res.status(200).json({ success: true, registration: mockRegData, mock: true });
+          return res.status(400).json({
+            error:
+              err.message ||
+              "Failed to save registration in Supabase. Ensure the registrations table exists.",
+          });
         }
       }
       case "updatePossession": {
@@ -2353,13 +2763,11 @@ export default async function handler(req: any, res: any) {
 
           return res.status(200).json({ success: true, possession: possData });
         } catch (err: any) {
-          const existingIdx = inMemoryPostSales.possessions.findIndex(p => p.booking_id === bookingId);
-          if (existingIdx >= 0) {
-            inMemoryPostSales.possessions[existingIdx] = mockPossData;
-          } else {
-            inMemoryPostSales.possessions.push(mockPossData);
-          }
-          return res.status(200).json({ success: true, possession: mockPossData, mock: true });
+          return res.status(400).json({
+            error:
+              err.message ||
+              "Failed to save possession in Supabase. Ensure the possessions table exists.",
+          });
         }
       }
       case "savePaymentSchedule": {
@@ -2384,11 +2792,11 @@ export default async function handler(req: any, res: any) {
           if (error) throw error;
           return res.status(200).json({ success: true, milestones: data });
         } catch (err: any) {
-          inMemoryPostSales.paymentSchedules = [
-            ...inMemoryPostSales.paymentSchedules.filter(p => p.booking_id !== bookingId),
-            ...inserts,
-          ];
-          return res.status(200).json({ success: true, milestones: inserts, mock: true });
+          return res.status(400).json({
+            error:
+              err.message ||
+              "Failed to save payment schedule in Supabase. Ensure the payment_schedules table exists.",
+          });
         }
       }
       case "processRefund": {
@@ -2428,8 +2836,11 @@ export default async function handler(req: any, res: any) {
           if (error) throw error;
           return res.status(200).json({ success: true, refund: data });
         } catch (err: any) {
-          inMemoryPostSales.refunds.push(mockRefund);
-          return res.status(200).json({ success: true, refund: mockRefund, mock: true });
+          return res.status(400).json({
+            error:
+              err.message ||
+              "Failed to process refund in Supabase. Ensure the refunds table exists.",
+          });
         }
       }
       case "updateBookingStatus": {
@@ -3201,8 +3612,8 @@ export default async function handler(req: any, res: any) {
         await supabase.from("audit_logs").insert({
           user: actorName,
           action: "CREATE_USER",
-          old_value: "None",
-          new_value: `${user.name} (${user.role})`,
+          old_value: "No account",
+          new_value: `${actorName} created user account for ${user.name} (${user.email}) with role ${String(user.role || "").replace(/_/g, " ")}.`,
         });
         return res.status(200).json({
           id: data.user?.id,
@@ -3263,13 +3674,42 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ success: true });
       }
       case "addAuditLog": {
-        const { action, oldVal, newVal } = payload;
+        const { action, oldVal, newVal, meta } = payload;
+        if (!action) return res.status(400).json({ error: "action is required" });
+
+        // Prefer human-readable actor identity from JWT
+        const displayUser =
+          actorName && actorName !== "Anonymous"
+            ? actorEmail
+              ? `${actorName} (${actorEmail})`
+              : actorName
+            : actorEmail || "Unknown user";
+
+        let safeNew = String(newVal || "");
+        let safeOld = String(oldVal || "");
+
+        // Enrich reveal events if metadata provided
+        if (String(action).startsWith("REVEAL_CONFIDENTIAL_") && meta?.entityName) {
+          const field =
+            meta.fieldType === "phone"
+              ? "phone number"
+              : meta.fieldType === "email"
+                ? "email address"
+                : meta.fieldType === "budget"
+                  ? "budget"
+                  : "confidential field";
+          safeNew = `${actorName} viewed the ${field} of ${meta.entityName}${
+            meta.entityId ? ` (Customer ID: ${meta.entityId})` : ""
+          }.`;
+          safeOld = "Hidden / Masked on screen";
+        }
+
         await supabase.from("audit_logs").insert({
-          user: actorName,
+          user: displayUser,
           action,
           timestamp: new Date().toISOString(),
-          old_value: oldVal,
-          new_value: newVal,
+          old_value: safeOld,
+          new_value: safeNew,
         });
         return res.status(200).json({ success: true });
       }
@@ -3420,7 +3860,7 @@ export default async function handler(req: any, res: any) {
           .upsert(updatedObj, { onConflict: "id" });
 
         if (error) {
-          console.warn(
+          safeLogger.error(
             "Supabase upsert failed for invoice_settings, returning local updated state:",
             error.message,
           );
@@ -3441,77 +3881,14 @@ export default async function handler(req: any, res: any) {
       case "getInvoicePermissions": {
         try {
           const { data, error } = await supabase.from("invoice_role_permissions").select("*");
-
-          const defaultMatrix = [
-            {
-              role: "super_admin",
-              can_view_cms: true,
-              can_edit_company_info: true,
-              can_update_banking: true,
-              can_modify_tax: true,
-              can_edit_terms: true,
-              can_change_branding: true,
-              can_manage_templates: true,
-              can_generate_invoices: true,
-              can_regenerate_invoices: true,
-            },
-            {
-              role: "admin",
-              can_view_cms: true,
-              can_edit_company_info: true,
-              can_update_banking: false,
-              can_modify_tax: true,
-              can_edit_terms: true,
-              can_change_branding: true,
-              can_manage_templates: true,
-              can_generate_invoices: true,
-              can_regenerate_invoices: true,
-            },
-            {
-              role: "manager",
-              can_view_cms: true,
-              can_edit_company_info: false,
-              can_update_banking: false,
-              can_modify_tax: false,
-              can_edit_terms: false,
-              can_change_branding: false,
-              can_manage_templates: false,
-              can_generate_invoices: true,
-              can_regenerate_invoices: true,
-            },
-            {
-              role: "sales_executive",
-              can_view_cms: false,
-              can_edit_company_info: false,
-              can_update_banking: false,
-              can_modify_tax: false,
-              can_edit_terms: false,
-              can_change_branding: false,
-              can_manage_templates: false,
-              can_generate_invoices: true,
-              can_regenerate_invoices: false,
-            },
-            {
-              role: "marketing",
-              can_view_cms: false,
-              can_edit_company_info: false,
-              can_update_banking: false,
-              can_modify_tax: false,
-              can_edit_terms: false,
-              can_change_branding: false,
-              can_manage_templates: false,
-              can_generate_invoices: false,
-              can_regenerate_invoices: false,
-            },
-          ];
-
-          if (error || !data || data.length === 0) {
-            return res.status(200).json(defaultMatrix);
+          if (!error && data && data.length > 0) {
+            return res.status(200).json(data);
           }
-          return res.status(200).json(data);
-        } catch (e: any) {
-          return res.status(500).json({ error: e.message });
+        } catch (_) {
+          /* fall through */
         }
+        const fallback = await readInvoicePermsFallback(supabase);
+        return res.status(200).json(fallback.roleMatrix || DEFAULT_INVOICE_ROLE_MATRIX);
       }
 
       case "updateInvoicePermissions": {
@@ -3521,23 +3898,49 @@ export default async function handler(req: any, res: any) {
             .json({ error: "Only Super Admin can modify Invoice Role Permissions." });
         }
         const { matrix } = payload; // Array of role permissions
+        if (!Array.isArray(matrix) || matrix.length === 0) {
+          return res.status(400).json({ error: "matrix array is required" });
+        }
         const now = new Date().toISOString();
 
         const prepared = matrix.map((item: any) => ({
-          ...item,
+          role: item.role,
+          can_view_cms: !!item.can_view_cms,
+          can_edit_company_info: !!item.can_edit_company_info,
+          can_update_banking: !!item.can_update_banking,
+          can_modify_tax: !!item.can_modify_tax,
+          can_edit_terms: !!item.can_edit_terms,
+          can_change_branding: !!item.can_change_branding,
+          can_manage_templates: !!item.can_manage_templates,
+          can_generate_invoices: !!item.can_generate_invoices,
+          can_regenerate_invoices: !!item.can_regenerate_invoices,
           updated_at: now,
           updated_by: actorName,
         }));
 
+        let tableOk = true;
         const { error } = await supabase
           .from("invoice_role_permissions")
           .upsert(prepared, { onConflict: "role" });
-
         if (error) {
-          console.warn("Supabase upsert failed for invoice_role_permissions:", error.message);
+          tableOk = false;
+          safeLogger.error("Supabase upsert failed for invoice_role_permissions:", error.message);
         }
 
-        // Write audit log
+        // Always write durable fallback so permissions survive missing tables / cold starts
+        const fallbackResult = await writeInvoicePermsFallback(
+          supabase,
+          { roleMatrix: prepared },
+          actorName,
+        );
+
+        if (!tableOk && !fallbackResult.persisted && !inMemoryInvoicePermissions.roleMatrix) {
+          return res.status(500).json({
+            error:
+              "Failed to save role permission matrix. Ensure invoice_role_permissions or invoice_settings table exists.",
+          });
+        }
+
         await supabase.from("audit_logs").insert({
           user: actorName,
           action: "INVOICE_PERMISSIONS_UPDATED",
@@ -3553,6 +3956,9 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ error: `Unknown action: ${action}` });
     }
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    safeLogger.error("CRM API handler error");
+    return res.status(500).json({
+      error: IS_PROD ? "Something went wrong. Please try again." : error?.message || "Server error",
+    });
   }
 }

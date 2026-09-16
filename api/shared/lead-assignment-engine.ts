@@ -4,6 +4,7 @@
 // ============================================================
 
 import { getSupabaseClient } from "./lead-service.js";
+import { safeLogger } from "./safe-logger.js";
 
 export interface LeadAssignmentSettingsRow {
   id: string;
@@ -153,15 +154,27 @@ export class SourceBasedStrategy implements IAssignmentStrategy {
   name = "source_based";
 
   async assign(ctx: AssignmentContext): Promise<AssignmentResult> {
-    const targetRole = ctx.settings.source_routes?.[ctx.source] || "sales_executive";
+    const rawTarget = ctx.settings.source_routes?.[ctx.source] || "sales_executive";
+    const targetRole = String(rawTarget)
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
     let pool = filterEligibleUsers(ctx.eligibleUsers, ctx.settings);
 
-    // If a specific target role mapping exists, filter pool by that role
-    const roleFiltered = pool.filter(
-      (u) =>
-        u.role.toLowerCase().replace("_", " ") === targetRole.toLowerCase() ||
-        u.role === targetRole,
-    );
+    // Prefer exact/fuzzy role match; also allow mapping directly to a specific user name
+    const roleFiltered = pool.filter((u) => {
+      const normRole = String(u.role || "")
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
+      const normName = String(u.name || "")
+        .toLowerCase()
+        .trim();
+      return (
+        normRole === targetRole ||
+        normRole.includes(targetRole.replace(/_/g, "")) ||
+        targetRole.includes(normRole) ||
+        normName === String(rawTarget).toLowerCase().trim()
+      );
+    });
     if (roleFiltered.length > 0) {
       pool = roleFiltered;
     }
@@ -185,7 +198,7 @@ export class SourceBasedStrategy implements IAssignmentStrategy {
       assignedOwner: selectedUser.name,
       assignedUserId: selectedUser.id,
       strategyUsed: this.name,
-      reason: `Source-based routing for ${ctx.source} leads (Target pool: ${targetRole})`,
+      reason: `Source-based routing for ${ctx.source} leads (Target pool: ${rawTarget})`,
     };
   }
 }
@@ -298,16 +311,42 @@ async function updateIndexPointer(
   const supabase = getSupabaseClient();
   const updatedMap = { ...(currentMap || {}), [key]: nextIndex };
   try {
-    await supabase
+    const { error } = await supabase
       .from("lead_assignment_settings")
       .update({ last_assigned_index_map: updatedMap, updated_at: new Date().toISOString() })
       .eq("id", settingsId);
+    if (error) {
+      // Keep in-memory / fallback settings pointer in sync when table update fails
+      await saveLeadAssignmentSettingsInternal(
+        { last_assigned_index_map: updatedMap },
+        "System",
+      );
+    } else if (inMemoryLeadAssignmentSettings.value) {
+      inMemoryLeadAssignmentSettings.value = {
+        ...inMemoryLeadAssignmentSettings.value,
+        last_assigned_index_map: updatedMap,
+      };
+    }
   } catch (err) {
-    console.error("Failed to update lead assignment index pointer:", err);
+    safeLogger.error("Failed to update lead assignment index pointer:", err);
+    try {
+      await saveLeadAssignmentSettingsInternal(
+        { last_assigned_index_map: updatedMap },
+        "System",
+      );
+    } catch (_) {
+      /* best effort */
+    }
   }
 }
 
 // Fetch settings from DB or default
+const inMemoryLeadAssignmentSettings: { value: LeadAssignmentSettingsRow | null } = {
+  value: null,
+};
+
+const LEAD_ASSIGNMENT_FALLBACK_ID = "inv_lead_assignment_settings_store";
+
 export async function getLeadAssignmentSettingsInternal(): Promise<LeadAssignmentSettingsRow> {
   const supabase = getSupabaseClient();
   const defaultSettings: LeadAssignmentSettingsRow = {
@@ -341,13 +380,94 @@ export async function getLeadAssignmentSettingsInternal(): Promise<LeadAssignmen
       .eq("id", "default_assignment_settings")
       .single();
 
-    if (error || !data) {
-      return defaultSettings;
+    if (!error && data) {
+      const merged = { ...defaultSettings, ...data };
+      inMemoryLeadAssignmentSettings.value = merged;
+      return merged;
     }
-    return { ...defaultSettings, ...data };
-  } catch (err) {
-    return defaultSettings;
+  } catch (_) {
+    /* fall through */
   }
+
+  // Durable fallback in invoice_settings JSON store
+  try {
+    const { data: fallback } = await supabase
+      .from("invoice_settings")
+      .select("company_info")
+      .eq("id", LEAD_ASSIGNMENT_FALLBACK_ID)
+      .maybeSingle();
+    if (fallback?.company_info?.settings) {
+      const merged = { ...defaultSettings, ...fallback.company_info.settings };
+      inMemoryLeadAssignmentSettings.value = merged;
+      return merged;
+    }
+  } catch (_) {
+    /* fall through */
+  }
+
+  if (inMemoryLeadAssignmentSettings.value) {
+    return { ...defaultSettings, ...inMemoryLeadAssignmentSettings.value };
+  }
+
+  return defaultSettings;
+}
+
+export async function saveLeadAssignmentSettingsInternal(
+  updates: Partial<LeadAssignmentSettingsRow>,
+  actorName: string,
+): Promise<{ settings: LeadAssignmentSettingsRow; persisted: boolean; error?: string }> {
+  const supabase = getSupabaseClient();
+  const existing = await getLeadAssignmentSettingsInternal();
+  const newSettings: LeadAssignmentSettingsRow = {
+    ...existing,
+    ...updates,
+    id: "default_assignment_settings",
+    updated_at: new Date().toISOString(),
+    updated_by: actorName,
+  };
+
+  inMemoryLeadAssignmentSettings.value = newSettings;
+
+  let tableError: string | undefined;
+  try {
+    const { error } = await supabase
+      .from("lead_assignment_settings")
+      .upsert(newSettings, { onConflict: "id" });
+    if (error) tableError = error.message;
+  } catch (err: any) {
+    tableError = err?.message || "lead_assignment_settings upsert failed";
+  }
+
+  // Always mirror into durable JSON fallback so settings survive missing tables
+  let fallbackOk = false;
+  try {
+    const { error } = await supabase.from("invoice_settings").upsert(
+      {
+        id: LEAD_ASSIGNMENT_FALLBACK_ID,
+        company_info: { settings: newSettings },
+        banking_details: {},
+        tax_statutory: {},
+        invoice_notes: {},
+        branding: {},
+        numbering: {},
+        payment_info: {},
+        default_template_id: "modern_executive",
+        updated_at: newSettings.updated_at,
+        updated_by: actorName,
+      },
+      { onConflict: "id" },
+    );
+    fallbackOk = !error;
+    if (error) safeLogger.error("lead assignment fallback upsert failed:", error.message);
+  } catch (err: any) {
+    safeLogger.error("lead assignment fallback upsert exception:", err?.message);
+  }
+
+  return {
+    settings: newSettings,
+    persisted: !tableError || fallbackOk,
+    error: tableError && !fallbackOk ? tableError : undefined,
+  };
 }
 
 // Fetch all CRM users formatted for Assignment Engine
@@ -370,7 +490,7 @@ export async function getEngineUsersInternal(): Promise<EngineUser[]> {
         : [],
     }));
   } catch (err) {
-    console.error("Failed to fetch engine users:", err);
+    safeLogger.error("Failed to fetch engine users:", err);
     return [];
   }
 }
@@ -476,7 +596,7 @@ export async function executeLeadAssignmentEngine(params: {
         assigned_to: result.assignedOwner,
       });
     } catch (e) {
-      console.error("Failed to insert assignment notification:", e);
+      safeLogger.error("Failed to insert assignment notification:", e);
     }
   }
 
@@ -498,6 +618,6 @@ async function recordAssignmentHistory(
       assigned_by: params.actorName || "System",
     });
   } catch (err) {
-    console.error("Failed to record lead assignment history:", err);
+    safeLogger.error("Failed to record lead assignment history:", err);
   }
 }

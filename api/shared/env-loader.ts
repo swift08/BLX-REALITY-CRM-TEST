@@ -18,5 +18,7 @@ try {
     }
   }
 } catch (e) {
-  console.error("Failed to load local .env file:", e);
+  // Never print .env contents — keys/secrets may be on those lines
+  // eslint-disable-next-line no-console
+  console.error("Failed to load local .env file");
 }

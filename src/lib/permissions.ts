@@ -8,6 +8,95 @@ import type { AppRole } from "@/hooks/use-auth";
  *   import { can } from "@/lib/permissions";
  *   if (can(role).deleteCustomer()) { ... }
  */
+
+export type InvoicePermissionFlags = {
+  can_view_cms: boolean;
+  can_edit_company_info: boolean;
+  can_update_banking: boolean;
+  can_modify_tax: boolean;
+  can_edit_terms: boolean;
+  can_change_branding: boolean;
+  can_manage_templates: boolean;
+  can_generate_invoices: boolean;
+  can_regenerate_invoices: boolean;
+};
+
+type RuntimeInvoicePermissionState = {
+  roleMatrix: Record<string, InvoicePermissionFlags>;
+  userOverrides: Record<string, InvoicePermissionFlags>;
+  currentUserId: string | null;
+};
+
+let runtimeInvoicePermissions: RuntimeInvoicePermissionState | null = null;
+
+/** Hydrate Invoice CMS permission matrix + per-user overrides used by `can()`. */
+export function setRuntimeInvoicePermissions(input: {
+  roleMatrix?: Array<{ role: string } & Partial<InvoicePermissionFlags>> | null;
+  userOverrides?: Array<{ user_id: string } & Partial<InvoicePermissionFlags>> | null;
+  currentUserId?: string | null;
+}) {
+  const roleMatrix: Record<string, InvoicePermissionFlags> = {};
+  for (const row of input.roleMatrix || []) {
+    if (!row?.role) continue;
+    roleMatrix[row.role] = {
+      can_view_cms: !!row.can_view_cms,
+      can_edit_company_info: !!row.can_edit_company_info,
+      can_update_banking: !!row.can_update_banking,
+      can_modify_tax: !!row.can_modify_tax,
+      can_edit_terms: !!row.can_edit_terms,
+      can_change_branding: !!row.can_change_branding,
+      can_manage_templates: !!row.can_manage_templates,
+      can_generate_invoices: !!row.can_generate_invoices,
+      can_regenerate_invoices: !!row.can_regenerate_invoices,
+    };
+  }
+
+  const userOverrides: Record<string, InvoicePermissionFlags> = {};
+  for (const row of input.userOverrides || []) {
+    if (!row?.user_id) continue;
+    userOverrides[row.user_id] = {
+      can_view_cms: !!row.can_view_cms,
+      can_edit_company_info: !!row.can_edit_company_info,
+      can_update_banking: !!row.can_update_banking,
+      can_modify_tax: !!row.can_modify_tax,
+      can_edit_terms: !!row.can_edit_terms,
+      can_change_branding: !!row.can_change_branding,
+      can_manage_templates: !!row.can_manage_templates,
+      can_generate_invoices: !!row.can_generate_invoices,
+      can_regenerate_invoices: !!row.can_regenerate_invoices,
+    };
+  }
+
+  runtimeInvoicePermissions = {
+    roleMatrix,
+    userOverrides,
+    currentUserId: input.currentUserId ?? runtimeInvoicePermissions?.currentUserId ?? null,
+  };
+}
+
+function resolveInvoiceFlag(
+  role: AppRole | null,
+  key: keyof InvoicePermissionFlags,
+  hardcodedFallback: boolean,
+): boolean {
+  // Super Admin always retains full Invoice CMS control
+  if (role === "super_admin") return true;
+
+  const state = runtimeInvoicePermissions;
+  if (!state) return hardcodedFallback;
+
+  const userId = state.currentUserId;
+  if (userId && state.userOverrides[userId] && key in state.userOverrides[userId]) {
+    return !!state.userOverrides[userId][key];
+  }
+
+  if (role && state.roleMatrix[role] && key in state.roleMatrix[role]) {
+    return !!state.roleMatrix[role][key];
+  }
+
+  return hardcodedFallback;
+}
+
 export function can(role: AppRole | null) {
   const isSuperAdmin = role === "super_admin";
   const isAdmin = role === "admin";
@@ -238,23 +327,35 @@ export function can(role: AppRole | null) {
 
     // ─── INVOICE CMS & PERMISSIONS ───────────────────────────────
     /** Access / view the Invoice CMS module */
-    viewInvoiceCMS: () => isSuperAdmin || isAdmin || isManager,
+    viewInvoiceCMS: () =>
+      resolveInvoiceFlag(role, "can_view_cms", isSuperAdmin || isAdmin || isManager),
     /** Edit business company details on invoices */
-    editInvoiceCompanyInfo: () => isSuperAdmin || isAdmin,
+    editInvoiceCompanyInfo: () =>
+      resolveInvoiceFlag(role, "can_edit_company_info", isSuperAdmin || isAdmin),
     /** Update bank accounts and payment details */
-    updateInvoiceBankingDetails: () => isSuperAdmin,
+    updateInvoiceBankingDetails: () =>
+      resolveInvoiceFlag(role, "can_update_banking", isSuperAdmin),
     /** Modify GST, TDS, PF, and statutory tax parameters */
-    modifyInvoiceTaxInfo: () => isSuperAdmin || isAdmin,
+    modifyInvoiceTaxInfo: () =>
+      resolveInvoiceFlag(role, "can_modify_tax", isSuperAdmin || isAdmin),
     /** Edit payment notes, terms & conditions */
-    editInvoiceTerms: () => isSuperAdmin || isAdmin,
+    editInvoiceTerms: () =>
+      resolveInvoiceFlag(role, "can_edit_terms", isSuperAdmin || isAdmin),
     /** Change company logo, seal, branding colors & signatory */
-    changeInvoiceBranding: () => isSuperAdmin || isAdmin,
+    changeInvoiceBranding: () =>
+      resolveInvoiceFlag(role, "can_change_branding", isSuperAdmin || isAdmin),
     /** Select default invoice template */
-    manageInvoiceTemplates: () => isSuperAdmin || isAdmin,
+    manageInvoiceTemplates: () =>
+      resolveInvoiceFlag(role, "can_manage_templates", isSuperAdmin || isAdmin),
     /** Generate new tax invoices */
-    generateInvoices: () => !isMarketing,
+    generateInvoices: () => resolveInvoiceFlag(role, "can_generate_invoices", !isMarketing),
     /** Regenerate existing invoices with updated CMS rules */
-    regenerateInvoices: () => isSuperAdmin || isAdmin || isManager,
+    regenerateInvoices: () =>
+      resolveInvoiceFlag(
+        role,
+        "can_regenerate_invoices",
+        isSuperAdmin || isAdmin || isManager,
+      ),
     /** Approve invoices in Pending Approval state */
     approveInvoices: () => isSuperAdmin || isAdmin || isManager,
     /** Cancel issued invoices */

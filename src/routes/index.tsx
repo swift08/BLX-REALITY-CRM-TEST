@@ -13,6 +13,8 @@ import {
   useProjects,
   useFollowups,
   useAuditLogs,
+  useUserPreferences,
+  useUpdateUserPreferences,
   getProjectProfitRate,
   getProjectRevenueAndProfit,
 } from "@/lib/queries";
@@ -196,8 +198,10 @@ const DEFAULT_WIDGET_DECK: WidgetConfig[] = [
 ];
 
 function Dashboard() {
-  const { user, role } = useAuth();
+  const { user, role, userId } = useAuth();
   const navigate = useNavigate();
+  const { data: userPrefs } = useUserPreferences(!!userId);
+  const updateUserPrefs = useUpdateUserPreferences();
 
   // Marketing role: redirect to Projects page immediately
   useEffect(() => {
@@ -342,17 +346,17 @@ function Dashboard() {
   } | null>(null);
   const [metricSearchQuery, setMetricSearchQuery] = useState("");
 
-  const [widgetDeck, setWidgetDeck] = useState<WidgetConfig[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("blx-dashboard-widget-deck-v2");
-      if (saved) return JSON.parse(saved);
+  const [widgetDeck, setWidgetDeck] = useState<WidgetConfig[]>(DEFAULT_WIDGET_DECK);
+
+  useEffect(() => {
+    if (Array.isArray(userPrefs?.dashboard_widgets) && userPrefs.dashboard_widgets.length > 0) {
+      setWidgetDeck(userPrefs.dashboard_widgets as WidgetConfig[]);
     }
-    return DEFAULT_WIDGET_DECK;
-  });
+  }, [userPrefs?.dashboard_widgets]);
 
   const saveDeck = (newDeck: WidgetConfig[]) => {
     setWidgetDeck(newDeck);
-    localStorage.setItem("blx-dashboard-widget-deck-v2", JSON.stringify(newDeck));
+    updateUserPrefs.mutate({ dashboard_widgets: newDeck });
   };
 
   const handleToggleHide = (id: string) => {
@@ -731,7 +735,12 @@ function Dashboard() {
                             <ExternalLink className="h-3 w-3 shrink-0" />
                           </a>
                           <div className="text-[10px] text-muted-foreground mt-0.5">
-                            <MaskedField value={c.phone} type="phone" />
+                            <MaskedField
+                              value={c.phone}
+                              type="phone"
+                              entityName={c.name}
+                              entityId={c.id}
+                            />
                           </div>
                         </td>
                         <td className="px-3 py-2 text-foreground font-medium">
@@ -791,7 +800,12 @@ function Dashboard() {
                               <ExternalLink className="h-3 w-3 shrink-0" />
                             </a>
                             <div className="text-[10px] text-muted-foreground mt-0.5">
-                              <MaskedField value={c.phone} type="phone" />
+                              <MaskedField
+                                value={c.phone}
+                                type="phone"
+                                entityName={c.name}
+                                entityId={c.id}
+                              />
                             </div>
                           </td>
                           <td className="px-3 py-2 text-foreground font-medium">
@@ -844,7 +858,12 @@ function Dashboard() {
                             <ExternalLink className="h-3 w-3 shrink-0" />
                           </a>
                           <div className="text-[10px] text-muted-foreground mt-0.5">
-                            <MaskedField value={c.phone} type="phone" />
+                            <MaskedField
+                              value={c.phone}
+                              type="phone"
+                              entityName={c.name}
+                              entityId={c.id}
+                            />
                           </div>
                         </td>
                         <td className="px-3 py-2 text-foreground font-medium">
@@ -857,7 +876,12 @@ function Dashboard() {
                           <TempBadge value={tempLabels[c.temperature as Temp] ?? c.temperature} />
                         </td>
                         <td className="px-3 py-2 font-bold text-foreground">
-                          <MaskedField value={c.budget || ""} type="budget" />
+                          <MaskedField
+                            value={c.budget || ""}
+                            type="budget"
+                            entityName={c.name}
+                            entityId={c.id}
+                          />
                         </td>
                         <td className="px-6 py-2 text-right text-muted-foreground font-medium">
                           {c.owner}
@@ -1370,14 +1394,24 @@ function RecentLeads({ customers }: { customers: any[] }) {
                     <td className="px-6 py-2">
                       <div className="font-semibold text-foreground">{c.name}</div>
                       <div className="text-[10px] text-muted-foreground mt-0.5">
-                        <MaskedField value={c.phone} type="phone" />
+                        <MaskedField
+                          value={c.phone}
+                          type="phone"
+                          entityName={c.name}
+                          entityId={c.id}
+                        />
                       </div>
                     </td>
                     <td className="px-3 py-2 text-foreground font-medium">
                       {c.projects?.name ?? "—"}
                     </td>
                     <td className="px-3 py-2 font-bold text-foreground">
-                      <MaskedField value={c.budget || ""} type="budget" />
+                      <MaskedField
+                        value={c.budget || ""}
+                        type="budget"
+                        entityName={c.name}
+                        entityId={c.id}
+                      />
                     </td>
                     <td className="px-3 py-2">
                       <StageBadge value={stageLabels[c.stage as Stage] ?? c.stage} />

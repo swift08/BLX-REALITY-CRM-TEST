@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { safeLogger } from "@/lib/safe-logger";
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minutes
 
@@ -63,7 +64,7 @@ export function useSessionMonitor() {
             navigate({ to: "/auth" });
           }
         } catch (e) {
-          console.error("Device verification error:", e);
+          safeLogger.error("Device verification error");
         }
       }
     };

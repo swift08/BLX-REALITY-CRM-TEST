@@ -7,6 +7,7 @@
 import "./env-loader.js";
 import { createClient } from "@supabase/supabase-js";
 import process from "node:process";
+import { safeLogger } from "./safe-logger.js";
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
@@ -140,7 +141,7 @@ export async function publishEvent(
       currentTimeline.push({ title: timelineMsg, time: now });
       await supabase.from("customers").update({ timeline: currentTimeline }).eq("id", customerId);
     } catch (e) {
-      console.error("Failed to update customer timeline:", e);
+      safeLogger.error("Failed to update customer timeline:", e);
     }
   }
 
@@ -154,7 +155,7 @@ export async function publishEvent(
         new_value: auditNew,
       });
     } catch (e) {
-      console.error("Failed to insert audit log:", e);
+      safeLogger.error("Failed to insert audit log:", e);
     }
   }
 }
@@ -324,7 +325,7 @@ export async function addLeadInternal(
       dbOpportunity.stage = "assigned";
     }
   } catch (assignErr) {
-    console.error("Failed to run Lead Assignment Engine:", assignErr);
+    safeLogger.error("Failed to run Lead Assignment Engine:", assignErr);
   }
 
   // 7. Set active opportunity id on customer

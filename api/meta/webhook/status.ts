@@ -5,6 +5,7 @@
 // ============================================================
 
 import { getSupabaseClient } from "../../shared/lead-service.js";
+import { safeLogger } from "../../shared/safe-logger.js";
 
 export default async function handler(req: any, res: any) {
   // Only allow GET requests
@@ -98,15 +99,15 @@ export default async function handler(req: any, res: any) {
       duplicateIgnored,
       graphApi: graphApiStatus,
       webhook: "verified",
-      tokenError: tokenErrorMessage,
-      lastError: lastLog && lastLog.status === "FAILED" ? lastLog.error_message : null,
+      tokenOk: !tokenErrorMessage,
+      lastError: lastLog && lastLog.status === "FAILED" ? "Lead sync failed" : null,
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error("Health endpoint error:", error.message);
+    safeLogger.error("Health endpoint error");
     return res.status(500).json({
       status: "error",
-      error: error.message,
+      error: "Health check failed",
       timestamp: new Date().toISOString(),
     });
   }

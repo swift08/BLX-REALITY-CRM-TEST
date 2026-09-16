@@ -541,6 +541,33 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_reference TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS approved_by TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT false;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS primary_invoice_id TEXT;
+
+-- Invoice CMS / Revenue Ops operational columns
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_number TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS outstanding_amount NUMERIC;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issued_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issued_by TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS snapshot JSONB DEFAULT '{}'::jsonb;
+
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS booking_id TEXT;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_method TEXT;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_number TEXT;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS created_by TEXT;
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- Per-user CRM UI preferences (Supabase source of truth; replaces localStorage for prefs)
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id TEXT PRIMARY KEY,
+    theme TEXT DEFAULT 'system',
+    active_role TEXT,
+    dashboard_widgets JSONB DEFAULT '[]'::jsonb NOT NULL,
+    lead_filter_presets JSONB DEFAULT '[]'::jsonb NOT NULL,
+    revops_workspace JSONB DEFAULT '{}'::jsonb NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
 
 -- Index for fast status-based queries
 CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);

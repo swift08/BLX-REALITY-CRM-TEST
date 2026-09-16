@@ -25,6 +25,8 @@ import {
   useUpdateNegotiation,
   useAddNegotiationRound,
   useRespondManagerApproval,
+  useUserPreferences,
+  useUpdateUserPreferences,
   updateLead,
   softDeleteLead,
   addLeadNote,
@@ -84,7 +86,6 @@ import {
   X,
   DollarSign,
   Paperclip,
-  Sparkles,
   ChevronRight,
   TrendingUp,
   Pencil,
@@ -186,18 +187,20 @@ function CustomersPage() {
   const [sortField, setSortField] = useState<SortField>("newest");
   const [showFilters, setShowFilters] = useState(false);
 
-  // Saved presets states
-  const [presets, setPresets] = useState<any[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("blx_lead_filter_presets");
-      if (saved) return JSON.parse(saved);
-    }
-    return [
-      { name: "🔥 Hot Facebook Enquiries", temp: "hot", source: "Facebook" },
-      { name: "🏢 Premium Range Budget", budgetMin: "2Cr", budgetMax: "99Cr" },
-    ];
-  });
+  // Saved presets states (Supabase user_preferences)
+  const { data: userPrefs } = useUserPreferences(!!userId);
+  const updateUserPrefs = useUpdateUserPreferences();
+  const [presets, setPresets] = useState<any[]>([
+    { name: "Hot Facebook Enquiries", temp: "hot", source: "Facebook" },
+    { name: "Premium Range Budget", budgetMin: "2Cr", budgetMax: "99Cr" },
+  ]);
   const [newPresetName, setNewPresetName] = useState("");
+
+  useEffect(() => {
+    if (Array.isArray(userPrefs?.lead_filter_presets) && userPrefs.lead_filter_presets.length > 0) {
+      setPresets(userPrefs.lead_filter_presets);
+    }
+  }, [userPrefs?.lead_filter_presets]);
 
   const applyPreset = (p: any) => {
     if (p.stage) setStageFilter(p.stage);
@@ -237,9 +240,15 @@ function CustomersPage() {
     };
     const updated = [...presets, newP];
     setPresets(updated);
-    localStorage.setItem("blx_lead_filter_presets", JSON.stringify(updated));
+    updateUserPrefs.mutate(
+      { lead_filter_presets: updated },
+      {
+        onSuccess: () => toast.success(`Filter configuration "${newP.name}" saved to Supabase!`),
+        onError: (err: any) =>
+          toast.error(err?.message || "Failed to save preset to Supabase"),
+      },
+    );
     setNewPresetName("");
-    toast.success(`Filter configuration "${newP.name}" saved!`);
   };
 
   // Dashboard Card Drill-down params check
@@ -782,10 +791,10 @@ function CustomersPage() {
                         <div className="font-semibold text-foreground">{c.name}</div>
                         <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
                           <Phone className="h-2.5 w-2.5" />{" "}
-                          <MaskedField value={c.phone} type="phone" />{" "}
+                          <MaskedField value={c.phone} type="phone" entityName={c.name} entityId={c.id} />{" "}
                           {c.email && (
                             <>
-                              | <MaskedField value={c.email} type="email" />
+                              | <MaskedField value={c.email} type="email" entityName={c.name} entityId={c.id} />
                             </>
                           )}
                         </div>
@@ -803,7 +812,12 @@ function CustomersPage() {
                         {c.source ?? "—"}
                       </td>
                       <td className="px-4 py-2 font-bold text-foreground">
-                        <MaskedField value={c.budget ?? ""} type="budget" />
+                        <MaskedField
+                          value={c.budget ?? ""}
+                          type="budget"
+                          entityName={c.name}
+                          entityId={c.id}
+                        />
                       </td>
                       <td className="px-4 py-2 text-muted-foreground font-medium">
                         <span className="flex items-center gap-1">
@@ -976,8 +990,8 @@ function Customer360Workspace({
       );
       qc.invalidateQueries({ queryKey: ["leads"] });
       toast.success("WhatsApp template triggered and communication logged!");
-    } catch (err: any) {
-      console.error(err);
+    } catch {
+      // Communication log is best-effort; toast already covers UX
     }
   };
 
@@ -1500,8 +1514,24 @@ function Customer360Workspace({
           </div>
           <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
             <span className="flex items-center gap-1">
-              <Phone className="h-3 w-3" /> {customer.phone}{" "}
-              {customer.email && `| ${customer.email}`}
+              <Phone className="h-3 w-3" />{" "}
+              <MaskedField
+                value={customer.phone}
+                type="phone"
+                entityName={customer.name}
+                entityId={customer.id}
+              />
+              {customer.email && (
+                <>
+                  {" | "}
+                  <MaskedField
+                    value={customer.email}
+                    type="email"
+                    entityName={customer.name}
+                    entityId={customer.id}
+                  />
+                </>
+              )}
             </span>
             <span className="inline-flex items-center gap-2 border-l pl-3">
               <a
@@ -1649,7 +1679,12 @@ function Customer360Workspace({
               <div className="flex justify-between py-1 border-b border-border/40">
                 <span className="text-muted-foreground">Budget Weight</span>
                 <span className="font-bold text-foreground">
-                  <MaskedField value={activeOpp?.budget || ""} type="budget" />
+                  <MaskedField
+                    value={activeOpp?.budget || ""}
+                    type="budget"
+                    entityName={customer.name}
+                    entityId={customer.id}
+                  />
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-border/40">
@@ -1919,13 +1954,6 @@ function Customer360Workspace({
                         <Select
                           value={editStage}
                           onValueChange={(v) => setEditStage(v as Stage)}
-                          disabled={
-                            customer.stage === "converted" ||
-                            customer.stage === "booking_initiated" ||
-                            customer.stage === "payment_pending" ||
-                            customer.stage === "payment_completed" ||
-                            customer.stage === "closed"
-                          }
                         >
                           <SelectTrigger>
                             <SelectValue />

@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { securityConfig } from "./security.config";
+import { safeLogger } from "./safe-logger";
 
 export function initializeClientSecurity() {
   if (typeof window === "undefined") return;
@@ -114,6 +115,6 @@ function logSecurityEvent(reason: string) {
       timestamp: new Date().toISOString(),
     });
   } else {
-    console.warn(`[Security Alert]: ${reason}`);
+    safeLogger.warn(`[Security Alert]: ${reason}`);
   }
 }

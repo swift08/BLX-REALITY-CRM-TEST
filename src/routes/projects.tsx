@@ -55,7 +55,6 @@ import {
   User,
   Calendar,
   Home,
-  Sparkles,
   Upload,
   Layers,
   ShieldCheck,

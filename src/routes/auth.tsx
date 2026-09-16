@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import logo from "@/assets/blx-logo.png";
-import { Eye, EyeOff, Sparkles, ShieldCheck, Sun, Moon } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck, Sun, Moon } from "lucide-react";
 async function callApi(action: string, payload: any = {}) {
   const res = await fetch("/api/crm", {
     method: "POST",
@@ -109,10 +109,10 @@ function AuthPage() {
                 ? "ADMIN_LOGIN"
                 : "USER_LOGIN";
           try {
-            await callApi("addAuditLog", {
+          await callApi("addAuditLog", {
               action: actionType,
-              oldVal: "Signed Out",
-              newVal: `User ${email} signed in as ${role}`,
+              oldVal: "Signed out",
+              newVal: `${email} signed in as ${String(role).replace(/_/g, " ")}`,
             });
           } catch (e) {
             // ignore logging error
@@ -202,7 +202,7 @@ function AuthPage() {
                   />
                 </div>
                 <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 border border-slate-200/50 dark:border-white/10 rounded-xl [transform:rotateY(90deg)_translateZ(48px)] grid place-items-center">
-                  <Sparkles className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
+                  <ShieldCheck className="h-6 w-6 text-indigo-500 dark:text-indigo-400" />
                 </div>
                 <div className="absolute inset-0 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-200/20 dark:border-white/20 rounded-xl backdrop-blur-md [transform:rotateY(180deg)_translateZ(48px)]" />
                 <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 border border-slate-200/50 dark:border-white/10 rounded-xl [transform:rotateY(-90deg)_translateZ(48px)] grid place-items-center">

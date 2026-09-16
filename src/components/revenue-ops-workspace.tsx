@@ -40,6 +40,8 @@ import {
   useCreateBookingInvoice,
   useRecordPayment,
   useCancelInvoice,
+  useUserPreferences,
+  useUpdateUserPreferences,
 } from "@/lib/queries";
 import {
   downloadPdfInvoice,
@@ -58,7 +60,6 @@ import {
   Ban,
   Building,
   Calendar,
-  Sparkles,
   ClipboardList,
   Lock,
   Receipt,
@@ -104,46 +105,51 @@ export interface RevenueOpsWorkspaceProps {
   subtitleOverride?: string;
 }
 
-const MEMORY_STORAGE_KEY = "blx-revops-workspace-memory-v1";
-
 export function RevenueOpsWorkspace({
   titleOverride,
   subtitleOverride,
 }: RevenueOpsWorkspaceProps) {
-  const { role, userId } = useAuth();
+  const { role, userId, user } = useAuth();
   const userCan = can(role);
+  const userFullName =
+    user?.user_metadata?.full_name || user?.email?.split("@")[0] || "";
 
   // Queries
   const { data: bookings = [], isLoading: isBookingsLoading } = useBookings();
   const { data: projects = [] } = useProjects();
   const { data: invoiceSettings } = useInvoiceSettings();
   const { data: crmUsers = [] } = useCRMUsers();
+  const { data: userPrefs } = useUserPreferences(!!userId);
+  const updateUserPrefs = useUpdateUserPreferences();
 
   // Mutations
   const createInvoiceMutation = useCreateBookingInvoice();
   const recordPaymentMutation = useRecordPayment();
   const cancelInvoiceMutation = useCancelInvoice();
 
-  // Workspace Memory (State Persistence)
-  const savedMemory = useMemo(() => {
-    try {
-      const item = localStorage.getItem(MEMORY_STORAGE_KEY);
-      return item ? JSON.parse(item) : {};
-    } catch (e) {
-      return {};
-    }
-  }, []);
-
   // Universal Search & Global Filters
-  const [searchTerm, setSearchTerm] = useState<string>(savedMemory.searchTerm || "");
-  const [projectFilter, setProjectFilter] = useState<string>(savedMemory.projectFilter || "all");
-  const [stageFilter, setStageFilter] = useState<string>(savedMemory.stageFilter || "all");
-  const [executiveFilter, setExecutiveFilter] = useState<string>(savedMemory.executiveFilter || "all");
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [executiveFilter, setExecutiveFilter] = useState<string>("all");
 
   // Selected Booking Record
-  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(
-    savedMemory.selectedBookingId || null,
-  );
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
+
+  // Hydrate workspace memory from Supabase once
+  useEffect(() => {
+    if (prefsHydrated || !userPrefs?.revops_workspace) return;
+    const mem = userPrefs.revops_workspace;
+    if (typeof mem.searchTerm === "string") setSearchTerm(mem.searchTerm);
+    if (typeof mem.projectFilter === "string") setProjectFilter(mem.projectFilter);
+    if (typeof mem.stageFilter === "string") setStageFilter(mem.stageFilter);
+    if (typeof mem.executiveFilter === "string") setExecutiveFilter(mem.executiveFilter);
+    if (typeof mem.selectedBookingId === "string" || mem.selectedBookingId === null) {
+      setSelectedBookingId(mem.selectedBookingId || null);
+    }
+    setPrefsHydrated(true);
+  }, [userPrefs?.revops_workspace, prefsHydrated]);
 
   // Ctrl + K Command Palette Modal
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -168,43 +174,49 @@ export function RevenueOpsWorkspace({
   // Keyboard shortcut listener for Ctrl + K / Cmd + K
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      const key = e.key?.toLowerCase?.() || "";
+      if ((e.ctrlKey || e.metaKey) && key === "k") {
         e.preventDefault();
+        e.stopPropagation();
         setCommandPaletteOpen((prev) => !prev);
+        setCommandQuery("");
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, []);
 
-  // Save workspace memory to localStorage on changes
+  // Persist workspace memory to Supabase (debounced lightly via effect)
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        MEMORY_STORAGE_KEY,
-        JSON.stringify({
+    if (!userId) return;
+    const handle = window.setTimeout(() => {
+      updateUserPrefs.mutate({
+        revops_workspace: {
           searchTerm,
           projectFilter,
           stageFilter,
           executiveFilter,
           selectedBookingId,
-        }),
-      );
-    } catch (e) {
-      // ignore storage errors
-    }
-  }, [searchTerm, projectFilter, stageFilter, executiveFilter, selectedBookingId]);
+        },
+      });
+    }, 800);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, projectFilter, stageFilter, executiveFilter, selectedBookingId, userId]);
 
   // Role Scoped Bookings
   const scopedBookings = useMemo(() => {
-    return bookings.filter((b) => isLeadVisible(role, userId, b.owner_id || null));
-  }, [bookings, role, userId]);
+    return bookings.filter((b) =>
+      isLeadVisible(role, userId, null, [], b.owner_id || null, userFullName),
+    );
+  }, [bookings, role, userId, userFullName]);
 
   // Enriched Revenue Records
   const enrichedRecords = useMemo(() => {
     return scopedBookings.map((b) => {
       const inv = b.invoice;
-      const invId = inv?.id || `inv-${b.id}`;
+      const hasRealInvoice = Boolean(inv?.id);
+      const invId = inv?.id || "";
       const invNumber =
         inv?.invoice_number ||
         `INV-2026-${b.id
@@ -213,14 +225,16 @@ export function RevenueOpsWorkspace({
           .padStart(4, "0")}/BLX`;
 
       const bookingStatus = b.booking?.payment_status || "pending";
-      const isIssued =
-        inv?.status === "issued" ||
-        inv?.status === "paid" ||
-        inv?.status === "partially_paid" ||
-        b.is_locked;
+      const isIssued = Boolean(
+        hasRealInvoice &&
+          (inv?.status === "issued" ||
+            inv?.status === "paid" ||
+            inv?.status === "partially_paid"),
+      );
 
       const invStatus =
-        inv?.status || (bookingStatus === "completed" ? "paid" : isIssued ? "issued" : "unissued");
+        inv?.status ||
+        (bookingStatus === "completed" ? "paid" : isIssued ? "issued" : "unissued");
 
       const totalBilled = inv?.amount || b.amount || 0;
       const amountPaid =
@@ -254,6 +268,7 @@ export function RevenueOpsWorkspace({
         invoiceId: invId,
         invoiceNumber: invNumber,
         isIssued,
+        hasRealInvoice,
         invoiceStatus: invStatus,
         lifecycleStage,
         totalBilled,
@@ -270,24 +285,42 @@ export function RevenueOpsWorkspace({
   const filteredRecords = useMemo(() => {
     return enrichedRecords.filter((item) => {
       const rawTerm = searchTerm.trim().toLowerCase();
-      if (!rawTerm) return true;
-
-      // Natural language Intent Parsing
-      if (rawTerm.includes("unpaid") || rawTerm.includes("pending") || rawTerm.includes("due")) {
-        if (item.outstandingAmount <= 0) return false;
-      }
-      if (rawTerm.includes("paid") || rawTerm.includes("cleared")) {
-        if (item.lifecycleStage !== "paid") return false;
-      }
-      if (rawTerm.includes("locked")) {
-        if (!item.is_locked) return false;
-      }
-      if (rawTerm.includes("high value") || rawTerm.includes("above 10 lakh")) {
-        if (item.totalBilled < 1000000) return false;
+      if (!rawTerm) {
+        const matchesProject = projectFilter === "all" || item.project_name === projectFilter;
+        const matchesExec =
+          executiveFilter === "all" ||
+          item.owner_id === executiveFilter ||
+          item.ownerName === executiveFilter;
+        let matchesStage = true;
+        if (stageFilter !== "all") {
+          matchesStage = item.lifecycleStage === stageFilter;
+        }
+        return matchesProject && matchesExec && matchesStage;
       }
 
-      // Normal multi-term matching
+      // Natural language Intent Parsing — these are filter intents, not text searches
+      const isUnpaidIntent =
+        rawTerm.includes("unpaid") ||
+        rawTerm.includes("pending") ||
+        rawTerm.includes("overdue") ||
+        rawTerm === "due";
+      const isPaidIntent =
+        (rawTerm.includes("paid") || rawTerm.includes("cleared")) && !rawTerm.includes("unpaid");
+      const isLockedIntent = rawTerm.includes("locked");
+      const isHighValueIntent =
+        rawTerm.includes("high value") ||
+        rawTerm.includes("above 10 lakh") ||
+        rawTerm.includes("10 lakh");
+      const hasNlIntent = isUnpaidIntent || isPaidIntent || isLockedIntent || isHighValueIntent;
+
+      if (isUnpaidIntent && item.outstandingAmount <= 0) return false;
+      if (isPaidIntent && item.lifecycleStage !== "paid") return false;
+      if (isLockedIntent && !item.is_locked && !item.isIssued) return false;
+      if (isHighValueIntent && item.totalBilled < 1000000) return false;
+
+      // Normal multi-term matching (skipped when a pure NL intent filter is active)
       const matchesSearch =
+        hasNlIntent ||
         item.customer_name.toLowerCase().includes(rawTerm) ||
         (item.customer_phone && item.customer_phone.toLowerCase().includes(rawTerm)) ||
         (item.customer_email && item.customer_email.toLowerCase().includes(rawTerm)) ||
@@ -299,15 +332,13 @@ export function RevenueOpsWorkspace({
 
       const matchesProject = projectFilter === "all" || item.project_name === projectFilter;
       const matchesExec =
-        executiveFilter === "all" || item.owner_id === executiveFilter || item.ownerName === executiveFilter;
+        executiveFilter === "all" ||
+        item.owner_id === executiveFilter ||
+        item.ownerName === executiveFilter;
 
       let matchesStage = true;
       if (stageFilter !== "all") {
-        if (stageFilter === "booking_initiated") matchesStage = item.lifecycleStage === "booking_initiated";
-        else if (stageFilter === "invoice_issued") matchesStage = item.lifecycleStage === "invoice_issued";
-        else if (stageFilter === "partially_paid") matchesStage = item.lifecycleStage === "partially_paid";
-        else if (stageFilter === "paid") matchesStage = item.lifecycleStage === "paid";
-        else if (stageFilter === "void") matchesStage = item.lifecycleStage === "void";
+        matchesStage = item.lifecycleStage === stageFilter;
       }
 
       return matchesSearch && matchesProject && matchesExec && matchesStage;
@@ -468,6 +499,43 @@ export function RevenueOpsWorkspace({
     toast.success(`Exported ${items.length} records to CSV!`);
   };
 
+  const applyCommandPaletteQuery = (raw: string) => {
+    const q = raw.trim().toLowerCase();
+    if (!q) return;
+
+    if (q.includes("export") || q.includes("csv") || q.includes("download ledger")) {
+      handleBulkExportCSV();
+      setCommandPaletteOpen(false);
+      setCommandQuery("");
+      return;
+    }
+    if (q.includes("invoice cms") || q.includes("open cms")) {
+      window.location.href = "/invoice-cms";
+      return;
+    }
+    if (q.includes("clear") && (q.includes("filter") || q.includes("search"))) {
+      setSearchTerm("");
+      setProjectFilter("all");
+      setStageFilter("all");
+      setExecutiveFilter("all");
+      toast.success("All revenue filters cleared.");
+      setCommandPaletteOpen(false);
+      setCommandQuery("");
+      return;
+    }
+
+    let nextTerm = q;
+    if (q.includes("unpaid") || q.includes("overdue") || q.includes("pending due")) nextTerm = "unpaid";
+    else if (q.includes("high value") || q.includes("10 lakh")) nextTerm = "above 10 lakh";
+    else if (q.includes("locked")) nextTerm = "locked";
+    else if (q.includes("cleared") || (q.includes("paid") && !q.includes("unpaid"))) nextTerm = "paid";
+
+    setSearchTerm(nextTerm);
+    toast.success(`Command applied: "${nextTerm}"`);
+    setCommandPaletteOpen(false);
+    setCommandQuery("");
+  };
+
   // Tax Invoice Issuance Handler
   const handleOpenIssueModal = (item: any) => {
     const validation = canGenerateInvoiceForCustomer(
@@ -554,6 +622,10 @@ export function RevenueOpsWorkspace({
 
   // Record Payment Handler
   const handleOpenPaymentModal = (item: any) => {
+    if (!item?.invoiceId || !item?.hasRealInvoice) {
+      toast.error("Issue a tax invoice before recording payment.");
+      return;
+    }
     setSelectedInvoiceForPayment(item);
     setPayAmount(String(item.outstandingAmount > 0 ? item.outstandingAmount : item.totalBilled));
     setPayReference(`UTR-${Math.random().toString(36).substring(2, 9).toUpperCase()}`);
@@ -563,6 +635,11 @@ export function RevenueOpsWorkspace({
   const handleRecordPaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedInvoiceForPayment || !payAmount) return;
+
+    if (!selectedInvoiceForPayment.invoiceId || !selectedInvoiceForPayment.hasRealInvoice) {
+      toast.error("Issue a tax invoice before recording payment.");
+      return;
+    }
 
     const amt = parseFloat(payAmount) || 0;
     if (amt <= 0) {
@@ -607,6 +684,11 @@ export function RevenueOpsWorkspace({
 
   // Cancel Invoice Handler
   const handleCancelInvoice = async (item: any) => {
+    if (!item?.invoiceId || !item?.hasRealInvoice) {
+      toast.error("No official invoice found to cancel.");
+      return;
+    }
+
     const reason = window.prompt(
       `Enter reason for cancelling official invoice ${item.invoiceNumber}:`,
     );
@@ -1491,12 +1573,21 @@ export function RevenueOpsWorkspace({
       </div>
 
       {/* Ctrl + K Command Palette Dialog Modal */}
-      <Dialog open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen}>
-        <DialogContent className="max-w-xl bg-card rounded-xl border border-border shadow-2xl p-4">
+      <Dialog
+        open={commandPaletteOpen}
+        onOpenChange={(open) => {
+          setCommandPaletteOpen(open);
+          if (!open) setCommandQuery("");
+        }}
+      >
+        <DialogContent className="max-w-xl bg-card rounded-xl border border-border shadow-2xl p-4 z-[100]">
           <DialogHeader className="pb-2 border-b">
             <DialogTitle className="text-sm font-bold flex items-center gap-2">
-              <Command className="h-4 w-4 text-primary" /> Natural Language AI Command Palette
+              <Command className="h-4 w-4 text-primary" /> Natural Language Command Palette
             </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Press Enter to run a command, or click a quick action below. Shortcut: Ctrl + K
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 pt-2">
@@ -1504,9 +1595,18 @@ export function RevenueOpsWorkspace({
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 autoFocus
-                placeholder="Type command or natural language prompt (e.g. 'unpaid', 'overdue', 'above 10 lakh')..."
+                placeholder="Type command (e.g. unpaid, overdue, above 10 lakh, export, clear filters)..."
                 value={commandQuery}
                 onChange={(e) => setCommandQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyCommandPaletteQuery(commandQuery || "unpaid");
+                  }
+                  if (e.key === "Escape") {
+                    setCommandPaletteOpen(false);
+                  }
+                }}
                 className="pl-9 text-xs h-10 font-medium"
               />
             </div>
@@ -1515,40 +1615,60 @@ export function RevenueOpsWorkspace({
               <div className="text-[10px] font-bold uppercase text-muted-foreground px-1">
                 Instant Actions & Filters
               </div>
-              <div
-                onClick={() => {
-                  setSearchTerm("unpaid");
-                  setCommandPaletteOpen(false);
-                  toast.info("Filtered to unpaid accounts.");
-                }}
-                className="p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
+              <button
+                type="button"
+                onClick={() => applyCommandPaletteQuery("unpaid")}
+                className="w-full text-left p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
               >
-                <span>Filter Unpaid Overdue Accounts</span>
-                <Badge variant="outline" className="text-[9px]">Filter</Badge>
-              </div>
+                <span>Filter Unpaid / Overdue Accounts</span>
+                <Badge variant="outline" className="text-[9px]">
+                  Filter
+                </Badge>
+              </button>
 
-              <div
-                onClick={() => {
-                  setSearchTerm("above 10 lakh");
-                  setCommandPaletteOpen(false);
-                  toast.info("Filtered to high value transactions above ₹10 L.");
-                }}
-                className="p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
+              <button
+                type="button"
+                onClick={() => applyCommandPaletteQuery("above 10 lakh")}
+                className="w-full text-left p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
               >
                 <span>Show High Value Transactions (&gt; ₹10 Lakhs)</span>
-                <Badge variant="outline" className="text-[9px]">Filter</Badge>
-              </div>
+                <Badge variant="outline" className="text-[9px]">
+                  Filter
+                </Badge>
+              </button>
 
-              <div
-                onClick={() => {
-                  handleBulkExportCSV();
-                  setCommandPaletteOpen(false);
-                }}
-                className="p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
+              <button
+                type="button"
+                onClick={() => applyCommandPaletteQuery("locked")}
+                className="w-full text-left p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
+              >
+                <span>Show Locked Contracts</span>
+                <Badge variant="outline" className="text-[9px]">
+                  Filter
+                </Badge>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyCommandPaletteQuery("export csv")}
+                className="w-full text-left p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
               >
                 <span>Export Active Ledger Records to CSV</span>
-                <Badge variant="outline" className="text-[9px]">Action</Badge>
-              </div>
+                <Badge variant="outline" className="text-[9px]">
+                  Action
+                </Badge>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyCommandPaletteQuery("clear filters")}
+                className="w-full text-left p-2 rounded-lg hover:bg-muted/30 cursor-pointer flex items-center justify-between"
+              >
+                <span>Clear All Filters</span>
+                <Badge variant="outline" className="text-[9px]">
+                  Reset
+                </Badge>
+              </button>
             </div>
           </div>
         </DialogContent>

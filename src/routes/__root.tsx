@@ -25,7 +25,10 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.error(error?.message || "Application error");
+  }
   const router = useRouter();
 
   return (

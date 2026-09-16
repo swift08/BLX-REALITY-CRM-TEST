@@ -35,7 +35,6 @@ import {
   List,
   Grid,
   Clock3,
-  Sparkles,
 } from "lucide-react";
 import {
   Dialog,

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { isLeadVisible, isInvoiceEligibleStage } from "@/lib/permissions";
 import type { AppRole } from "@/hooks/use-auth";
+import { safeLogger } from "@/lib/safe-logger";
 
 // ----------------------------------------------------
 // TypeScript Type Definitions
@@ -496,7 +497,7 @@ async function callApi(action: string, payload: any = {}): Promise<any> {
           }
         }
       } catch (err) {
-        console.error("Token refresh failed:", err);
+        safeLogger.error("Token refresh failed");
       }
     }
 
@@ -546,7 +547,7 @@ export function useLeads() {
       try {
         crmUsers = (await callApi("getCRMUsers")) as CRMUser[];
       } catch (e) {
-        console.error("Error fetching CRM users in useLeads:", e);
+        safeLogger.error("Error fetching CRM users in useLeads");
       }
 
       const filtered = mapped.filter((c) => !c.is_deleted);
@@ -725,7 +726,8 @@ export function useBookings() {
         }
 
         if (foundOpp) {
-          const proj = projects.find((p) => p.id === foundOpp?.projectId);
+          const projectKey = (foundOpp as any).projectId || (foundOpp as any).project_id;
+          const proj = projects.find((p) => p.id === projectKey);
           if (proj) projectName = proj.name;
         }
 
@@ -1317,8 +1319,13 @@ export async function deleteNotification(id: string) {
   return callApi("deleteNotification", { id });
 }
 
-export async function addAuditLog(action: string, oldVal: string, newVal: string) {
-  return callApi("addAuditLog", { action, oldVal, newVal });
+export async function addAuditLog(
+  action: string,
+  oldVal: string,
+  newVal: string,
+  meta?: { entityName?: string; entityId?: string; fieldType?: string },
+) {
+  return callApi("addAuditLog", { action, oldVal, newVal, meta });
 }
 
 export async function serverSignIn(payload: any) {
@@ -1634,6 +1641,39 @@ export function useUpdateUserInvoicePermissions() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user-invoice-permissions"] });
       queryClient.invalidateQueries({ queryKey: ["audit-logs"] });
+    },
+  });
+}
+
+export interface UserPreferences {
+  user_id: string;
+  theme?: string | null;
+  active_role?: string | null;
+  dashboard_widgets?: any[];
+  lead_filter_presets?: any[];
+  revops_workspace?: Record<string, any>;
+  updated_at?: string;
+}
+
+export function useUserPreferences(enabled = true) {
+  return useQuery({
+    queryKey: ["user-preferences"],
+    queryFn: async (): Promise<UserPreferences> => {
+      return callApi("getUserPreferences");
+    },
+    enabled,
+    staleTime: 1000 * 30,
+  });
+}
+
+export function useUpdateUserPreferences() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (preferences: Partial<UserPreferences>) => {
+      return callApi("updateUserPreferences", { preferences });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user-preferences"] });
     },
   });
 }

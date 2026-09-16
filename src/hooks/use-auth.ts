@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { safeLogger } from "@/lib/safe-logger";
 
 export type AppRole = "super_admin" | "admin" | "sales_executive" | "manager" | "marketing";
 
@@ -68,7 +69,7 @@ async function callApi(action: string, payload: any = {}): Promise<any> {
           }
         }
       } catch (err) {
-        console.error("Token refresh failed:", err);
+        safeLogger.error("Token refresh failed");
       }
     }
 
@@ -159,7 +160,7 @@ export function useAuth(): AuthState & {
         body: JSON.stringify({ action: "signOut", payload: {} }),
       });
     } catch (e) {
-      console.error("Sign out error:", e);
+      safeLogger.error("Sign out error");
     }
     setState({ session: null, user: null, role: null, userId: null, loading: false });
   }, []);
@@ -189,13 +190,13 @@ export function useAuth(): AuthState & {
                 : "ROLE_SWITCH";
           await callApi("addAuditLog", {
             action: actionType,
-            oldVal: `Role: ${prevRole}`,
-            newVal: `Switched to ${targetRole} by ${parsed.user?.email || "User"}`,
+            oldVal: `Previous view: ${String(prevRole).replace(/_/g, " ")}`,
+            newVal: `Now viewing CRM as ${String(targetRole).replace(/_/g, " ")} (${parsed.user?.email || "User"})`,
           }).catch(() => {});
 
           syncAuth(parsed);
         } catch (e) {
-          console.error("Change role error:", e);
+          safeLogger.error("Change role error");
         }
       }
       window.location.href = "/";
