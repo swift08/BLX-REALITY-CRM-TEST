@@ -1,7 +1,7 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import defaultLogoUrl from "@/assets/blx-logo.png";
-import type { InvoiceSettings } from "@/lib/queries";
+import { DEFAULT_INVOICE_CONTENT, type InvoiceSettings } from "@/lib/queries";
 
 export interface InvoiceData {
   bookingId?: string;
@@ -16,6 +16,26 @@ export interface InvoiceData {
   bookingDate?: string;
   customInvoiceNum?: string;
   customTxnRef?: string;
+  originalPrice?: number;
+  negotiatedPrice?: number;
+  commissionRate?: number;
+}
+
+export function computeInvoiceFigures(opts: {
+  amount: number;
+  cgstRate: number;
+  sgstRate: number;
+  gstEnabled: boolean;
+  commissionRate: number;
+  negotiatedPrice?: number;
+}) {
+  const baseAmount = opts.amount || 0;
+  const cgstAmount = opts.gstEnabled ? (baseAmount * (opts.cgstRate || 0)) / 100 : 0;
+  const sgstAmount = opts.gstEnabled ? (baseAmount * (opts.sgstRate || 0)) / 100 : 0;
+  const commissionBase = opts.negotiatedPrice || baseAmount;
+  const commissionAmount = (commissionBase * (opts.commissionRate || 0)) / 100;
+  const totalWithTax = baseAmount + cgstAmount + sgstAmount;
+  return { baseAmount, cgstAmount, sgstAmount, commissionAmount, totalWithTax };
 }
 
 const DEFAULT_SETTINGS: InvoiceSettings = {
@@ -101,6 +121,7 @@ const DEFAULT_SETTINGS: InvoiceSettings = {
     qr_instructions:
       "Scan UPI QR code using any UPI Banking App to complete instant token transfer.",
   },
+  content: DEFAULT_INVOICE_CONTENT,
   default_template_id: "modern_executive",
 };
 
@@ -119,6 +140,7 @@ export function generateInvoiceHtmlContent(
   const notes = mergedSettings.invoice_notes;
   const branding = mergedSettings.branding;
   const numbering = mergedSettings.numbering;
+  const content = { ...DEFAULT_INVOICE_CONTENT, ...(mergedSettings.content || {}) };
   const templateId = overrideTemplateId || mergedSettings.default_template_id || "modern_executive";
 
   const primaryColor = branding.primary_color || "#4f46e5";
@@ -148,12 +170,60 @@ export function generateInvoiceHtmlContent(
     data.customTxnRef || `TXN-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
   const formattedAmount = `₹${(data.amount || 0).toLocaleString("en-IN")}`;
 
-  // Tax math calculation if GST enabled
-  const baseAmount = data.amount || 0;
-  const cgstAmount = tax.gst_enabled ? (baseAmount * (tax.cgst_rate || 9)) / 100 : 0;
-  const sgstAmount = tax.gst_enabled ? (baseAmount * (tax.sgst_rate || 9)) / 100 : 0;
-  const totalWithTax = baseAmount + cgstAmount + sgstAmount;
+  const originalPrice = data.originalPrice ?? content.sample_original_price ?? 0;
+  const negotiatedPrice = data.negotiatedPrice ?? content.sample_negotiated_price ?? data.amount ?? 0;
+  const commissionRate = data.commissionRate ?? content.commission_rate ?? 0;
+  const { cgstAmount, sgstAmount, commissionAmount, totalWithTax } = computeInvoiceFigures({
+    amount: data.amount || 0,
+    cgstRate: tax.cgst_rate || 9,
+    sgstRate: tax.sgst_rate || 9,
+    gstEnabled: tax.gst_enabled,
+    commissionRate,
+    negotiatedPrice,
+  });
   const formattedTotalWithTax = `₹${totalWithTax.toLocaleString("en-IN")}`;
+  const inr = (n: number) => `₹${(n || 0).toLocaleString("en-IN")}`;
+
+  const docTitle = content.document_title || "TAX INVOICE";
+  const billedToLabel = content.billed_to_label || "BILLED TO";
+  const propertyLabel = content.property_label || "PROPERTY";
+  const lineTitle = content.line_item_title || "Booking Advance";
+  const lineSub = (content.line_item_subtitle || "Unit No. {unit} in {project}")
+    .replace("{unit}", data.unitNumber || "N/A")
+    .replace("{project}", data.projectName || "Project");
+  const lineCategory = content.line_item_category || "Booking Advance";
+  const statusBadge = content.status_badge || "PAID & CONFIRMED";
+  const totalLabel = content.total_label || "TOTAL AMOUNT PAID";
+  const bankLabel = content.bank_section_label || "BANK ACCOUNT DETAILS";
+  const termsLabel = content.terms_label || "TERMS & CONDITIONS";
+
+  const commercialHtml = (dark: boolean) => {
+    const rows: [string, string][] = [];
+    if (content.show_negotiated_price) {
+      rows.push([content.original_price_label, inr(originalPrice)]);
+      rows.push([content.negotiated_price_label, inr(negotiatedPrice)]);
+    }
+    if (content.show_commission) {
+      rows.push([`${content.commission_label} (${commissionRate}%)`, inr(commissionAmount)]);
+    }
+    if (!rows.length) return "";
+    const fg = dark ? "#f8fafc" : "#0f172a";
+    const muted = dark ? "#94a3b8" : "#64748b";
+    const bg = dark ? "#1e293b" : "#f8fafc";
+    const border = dark ? "#334155" : "#e2e8f0";
+    return `
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11.5px; background: ${bg}; border: 1px solid ${border}; border-radius: 8px;">
+        ${rows
+          .map(
+            ([label, value], i) => `
+          <tr style="${i < rows.length - 1 ? `border-bottom: 1px solid ${border};` : ""}">
+            <td style="padding: 8px 14px; color: ${muted};">${label}</td>
+            <td style="padding: 8px 14px; text-align: right; font-weight: 700; color: ${fg};">${value}</td>
+          </tr>`,
+          )
+          .join("")}
+      </table>`;
+  };
 
   // Template switchers
   if (templateId === "classic_corporate") {
@@ -172,7 +242,7 @@ export function generateInvoiceHtmlContent(
             </div>
           </td>
           <td style="width: 35%; vertical-align: top; text-align: right;">
-            <div style="font-size: 22px; font-weight: 900; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 1px;">OFFICIAL INVOICE</div>
+            <div style="font-size: 22px; font-weight: 900; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 1px;">${docTitle}</div>
             <div style="font-size: 11.5px; color: #334155; margin-top: 8px; line-height: 1.6;">
               <div><strong>No:</strong> ${invoiceNum}</div>
               <div><strong>Date:</strong> ${dateStr}</div>
@@ -186,19 +256,21 @@ export function generateInvoiceHtmlContent(
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11.5px;">
         <tr>
           <td style="width: 50%; padding: 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; vertical-align: top;">
-            <div style="font-weight: 800; color: ${secondaryColor}; text-transform: uppercase; font-size: 10px; margin-bottom: 4px;">BILLED TO CLIENT</div>
+            <div style="font-weight: 800; color: ${secondaryColor}; text-transform: uppercase; font-size: 10px; margin-bottom: 4px;">${billedToLabel}</div>
             <div style="font-size: 14px; font-weight: 700;">${data.customerName}</div>
             <div>Phone: ${data.customerPhone || "N/A"}</div>
             <div>Email: ${data.customerEmail || "N/A"}</div>
           </td>
           <td style="width: 50%; padding: 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; vertical-align: top;">
-            <div style="font-weight: 800; color: ${secondaryColor}; text-transform: uppercase; font-size: 10px; margin-bottom: 4px;">PROPERTY SPECIFICATION</div>
+            <div style="font-weight: 800; color: ${secondaryColor}; text-transform: uppercase; font-size: 10px; margin-bottom: 4px;">${propertyLabel}</div>
             <div style="font-size: 14px; font-weight: 700;">${data.projectName || "BLX Realty Project"}</div>
             <div>Unit Number: <strong>${data.unitNumber || "Standard Unit"}</strong></div>
             <div>Allocation: Verified & Booked</div>
           </td>
         </tr>
       </table>
+
+      ${commercialHtml(false)}
 
       <!-- Particulars Table -->
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11.5px; border: 1px solid #cbd5e1;">
@@ -214,8 +286,8 @@ export function generateInvoiceHtmlContent(
         <tbody>
           <tr>
             <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">
-              <strong>Booking Advance / Hold Reservation Token</strong><br />
-              <span style="font-size: 10px; color: #64748b;">${data.projectName} (Unit ${data.unitNumber})</span>
+              <strong>${lineTitle}</strong><br />
+              <span style="font-size: 10px; color: #64748b;">${lineSub}</span>
             </td>
             <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e2e8f0;">${formattedAmount}</td>
             <td style="padding: 12px; text-align: right; border-bottom: 1px solid #e2e8f0;">₹${cgstAmount.toLocaleString("en-IN")}</td>
@@ -230,7 +302,7 @@ export function generateInvoiceHtmlContent(
         <tr>
           <td style="width: 60%; vertical-align: top; padding-right: 10px;">
             <div style="padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 11px; background: #fafafa;">
-              <strong style="color: ${secondaryColor}; font-size: 10px; text-transform: uppercase;">BANK ACCOUNT DETAILS</strong>
+              <strong style="color: ${secondaryColor}; font-size: 10px; text-transform: uppercase;">${bankLabel}</strong>
               <div>Bank: <strong>${bank.bank_name}</strong></div>
               <div>Account Name: ${bank.account_holder}</div>
               <div>A/C No: <strong>${bank.account_number}</strong> | IFSC: <strong>${bank.ifsc_code}</strong></div>
@@ -239,7 +311,7 @@ export function generateInvoiceHtmlContent(
           </td>
           <td style="width: 40%; vertical-align: top;">
             <div style="background: ${secondaryColor}; color: #ffffff; padding: 14px; border-radius: 6px; text-align: right;">
-              <div style="font-size: 10px; text-transform: uppercase;">Grand Total Billed</div>
+              <div style="font-size: 10px; text-transform: uppercase;">${totalLabel}</div>
               <div style="font-size: 22px; font-weight: 800; margin-top: 4px;">${formattedTotalWithTax}</div>
               <div style="font-size: 9px; color: #34d399; font-weight: 700; margin-top: 2px;">✓ PAID IN FULL</div>
             </div>
@@ -249,7 +321,7 @@ export function generateInvoiceHtmlContent(
 
       <!-- Notes & Footer -->
       <div style="font-size: 10px; color: #475569; border-top: 1px solid #cbd5e1; padding-top: 10px; margin-top: 10px;">
-        <strong>Terms & Conditions:</strong>
+        <strong>${termsLabel}:</strong>
         <div style="white-space: pre-wrap; margin-top: 4px;">${notes.terms_and_conditions}</div>
         <div style="margin-top: 8px; text-align: center; font-size: 9px; color: #64748b;">${branding.footer_info}</div>
       </div>
@@ -270,7 +342,7 @@ export function generateInvoiceHtmlContent(
             </div>
           </td>
           <td style="vertical-align: top; text-align: right;">
-            <div style="font-size: 24px; font-weight: 300; color: #64748b;">INVOICE</div>
+            <div style="font-size: 24px; font-weight: 300; color: #64748b;">${docTitle}</div>
             <div style="font-size: 11px; color: #0f172a; margin-top: 6px;">
               <strong>${invoiceNum}</strong><br />
               <span style="color: #64748b;">Date:</span> ${dateStr}
@@ -283,18 +355,20 @@ export function generateInvoiceHtmlContent(
         <table style="width: 100%; font-size: 11.5px;">
           <tr>
             <td style="width: 50%; vertical-align: top;">
-              <span style="font-size: 10px; text-transform: uppercase; color: #94a3b8; font-weight: 700;">Client</span>
+              <span style="font-size: 10px; text-transform: uppercase; color: #94a3b8; font-weight: 700;">${billedToLabel}</span>
               <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">${data.customerName}</div>
               <div style="color: #64748b;">${data.customerEmail || ""}</div>
             </td>
             <td style="width: 50%; vertical-align: top; text-align: right;">
-              <span style="font-size: 10px; text-transform: uppercase; color: #94a3b8; font-weight: 700;">Property</span>
+              <span style="font-size: 10px; text-transform: uppercase; color: #94a3b8; font-weight: 700;">${propertyLabel}</span>
               <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">${data.projectName || "Listing Hold"}</div>
               <div style="color: #64748b;">Unit ${data.unitNumber || "N/A"}</div>
             </td>
           </tr>
         </table>
       </div>
+
+      ${commercialHtml(false)}
 
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 12px;">
         <thead>
@@ -306,8 +380,8 @@ export function generateInvoiceHtmlContent(
         <tbody>
           <tr style="border-bottom: 1px solid #f1f5f9;">
             <td style="padding: 14px 0;">
-              <strong>Initial Booking Hold Deposit</strong>
-              <div style="font-size: 11px; color: #64748b;">Advance token for unit reservation in ${data.projectName}</div>
+              <strong>${lineTitle}</strong>
+              <div style="font-size: 11px; color: #64748b;">${lineSub}</div>
             </td>
             <td style="padding: 14px 0; text-align: right; font-weight: 600;">${formattedAmount}</td>
           </tr>
@@ -320,7 +394,7 @@ export function generateInvoiceHtmlContent(
           <strong>Support:</strong> ${notes.customer_support}
         </div>
         <div style="text-align: right; width: 40%;">
-          <span style="font-size: 10px; color: #94a3b8; text-transform: uppercase;">Total Paid</span>
+          <span style="font-size: 10px; color: #94a3b8; text-transform: uppercase;">${totalLabel}</span>
           <div style="font-size: 26px; font-weight: 800; color: #0f172a;">${formattedTotalWithTax}</div>
         </div>
       </div>
@@ -348,7 +422,7 @@ export function generateInvoiceHtmlContent(
           </td>
           <td style="width: 40%; vertical-align: top; text-align: right;">
             <div style="display: inline-block; padding: 6px 16px; background: linear-gradient(135deg, #d97706, #b45309); color: #ffffff; font-weight: 800; font-size: 12px; border-radius: 4px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px;">
-              TAX RECEIPT & INVOICE
+              ${docTitle}
             </div>
             <div style="font-size: 11px; color: #94a3b8; line-height: 1.6;">
               <div>Invoice No: <strong style="color: #f8fafc;">${invoiceNum}</strong></div>
@@ -363,7 +437,7 @@ export function generateInvoiceHtmlContent(
       <table style="width: 100%; border-collapse: separate; border-spacing: 0; background: #1e293b; border: 1px solid #334155; border-radius: 8px; margin-bottom: 24px;">
         <tr>
           <td style="width: 50%; padding: 16px 20px; border-right: 1px solid #334155; vertical-align: top;">
-            <div style="font-size: 10px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">VALUED CLIENT</div>
+            <div style="font-size: 10px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">${billedToLabel}</div>
             <div style="font-size: 16px; font-weight: 700; color: #ffffff;">${data.customerName}</div>
             <div style="font-size: 11px; color: #cbd5e1; margin-top: 4px;">
               Phone: ${data.customerPhone || "N/A"}<br />
@@ -371,7 +445,7 @@ export function generateInvoiceHtmlContent(
             </div>
           </td>
           <td style="width: 50%; padding: 16px 20px; vertical-align: top;">
-            <div style="font-size: 10px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">PROPERTY RESERVATION</div>
+            <div style="font-size: 10px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">${propertyLabel}</div>
             <div style="font-size: 16px; font-weight: 700; color: #ffffff;">${data.projectName || "BLX Luxury Collection"}</div>
             <div style="font-size: 11px; color: #cbd5e1; margin-top: 4px;">
               Unit ID: <span style="font-family: monospace; color: #f59e0b; font-weight: 700;">${data.unitNumber || "Standard"}</span><br />
@@ -380,6 +454,8 @@ export function generateInvoiceHtmlContent(
           </td>
         </tr>
       </table>
+
+      ${commercialHtml(true)}
 
       <!-- Particulars Table -->
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; background: #0f172a; border-radius: 8px; overflow: hidden;">
@@ -392,8 +468,8 @@ export function generateInvoiceHtmlContent(
         <tbody>
           <tr style="border-bottom: 1px solid #1e293b;">
             <td style="padding: 16px;">
-              <strong style="font-size: 13px; color: #ffffff; display: block;">Unit Hold Reservation Deposit</strong>
-              <span style="font-size: 11px; color: #94a3b8;">Advance token towards property reservation at ${data.projectName}</span>
+              <strong style="font-size: 13px; color: #ffffff; display: block;">${lineTitle}</strong>
+              <span style="font-size: 11px; color: #94a3b8;">${lineSub}</span>
             </td>
             <td style="padding: 16px; text-align: right; font-weight: 800; font-size: 14px; color: #ffffff;">${formattedAmount}</td>
           </tr>
@@ -405,7 +481,7 @@ export function generateInvoiceHtmlContent(
         <tr>
           <td style="width: 60%; vertical-align: top; padding-right: 12px;">
             <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 14px; font-size: 11px; color: #cbd5e1;">
-              <div style="font-size: 10px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">OFFICIAL ESCROW BANK ACCOUNT</div>
+              <div style="font-size: 10px; font-weight: 800; color: #f59e0b; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">${bankLabel}</div>
               <div>Bank: <strong>${bank.bank_name}</strong></div>
               <div>Account Name: ${bank.account_holder}</div>
               <div>A/C No: <span style="font-family: monospace; font-weight: 700; color: #ffffff;">${bank.account_number}</span> | IFSC: <span style="font-family: monospace; font-weight: 700; color: #ffffff;">${bank.ifsc_code}</span></div>
@@ -414,7 +490,7 @@ export function generateInvoiceHtmlContent(
           </td>
           <td style="width: 40%; vertical-align: top;">
             <div style="background: linear-gradient(135deg, #1e1b4b, #311b92); border: 1px solid #d97706; border-radius: 8px; padding: 16px; text-align: right;">
-              <div style="font-size: 10px; color: #f59e0b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">TOTAL RECEIVED</div>
+              <div style="font-size: 10px; color: #f59e0b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">${totalLabel}</div>
               <div style="font-size: 24px; font-weight: 900; color: #ffffff; margin-top: 4px;">${formattedTotalWithTax}</div>
               <div style="font-size: 10px; color: #34d399; font-weight: 700; margin-top: 4px;">✓ FULLY CONFIRMED</div>
             </div>
@@ -458,7 +534,7 @@ export function generateInvoiceHtmlContent(
           </td>
           <td style="vertical-align: top; width: 40%; text-align: right;">
             <div style="display: inline-block; padding: 6px 16px; background-color: ${primaryColor}; color: #ffffff; font-size: 13px; font-weight: 800; border-radius: 6px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 12px;">
-              TAX INVOICE
+              ${docTitle}
             </div>
             <div style="font-size: 11.5px; color: #334155; line-height: 1.6;">
               <div><span style="color: #64748b;">Invoice No:</span> <strong style="color: #0f172a;">${invoiceNum}</strong></div>
@@ -466,7 +542,7 @@ export function generateInvoiceHtmlContent(
               <div><span style="color: #64748b;">Txn Ref:</span> <span style="font-family: monospace; font-weight: 700; color: ${primaryColor};">${txnRef}</span></div>
               <div style="margin-top: 6px;">
                 <span style="display: inline-block; padding: 3px 10px; background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 10px; font-weight: 800; border-radius: 9999px; text-transform: uppercase;">
-                  ✓ PAID & CONFIRMED
+                  ✓ ${statusBadge}
                 </span>
               </div>
             </div>
@@ -478,7 +554,7 @@ export function generateInvoiceHtmlContent(
       <table style="width: 100%; border-collapse: separate; border-spacing: 0; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 24px;">
         <tr>
           <td style="width: 50%; padding: 18px 20px; vertical-align: top; border-right: 1px solid #e2e8f0;">
-            <div style="font-size: 10px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">BILLED TO (CLIENT DETAILS)</div>
+            <div style="font-size: 10px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">${billedToLabel}</div>
             <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">${data.customerName}</div>
             <div style="font-size: 11px; color: #475569; line-height: 1.5;">
               <div><strong>Client ID:</strong> ${data.leadId || "N/A"}</div>
@@ -487,7 +563,7 @@ export function generateInvoiceHtmlContent(
             </div>
           </td>
           <td style="width: 50%; padding: 18px 20px; vertical-align: top;">
-            <div style="font-size: 10px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">PROPERTY ALLOCATION DETAILS</div>
+            <div style="font-size: 10px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;">${propertyLabel}</div>
             <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">${data.projectName || "BLX Premium Listing"}</div>
             <div style="font-size: 11px; color: #475569; line-height: 1.5;">
               <div><strong>Allocated Unit ID:</strong> <span style="font-family: monospace; font-weight: 700; color: ${primaryColor};">${data.unitNumber || "Standard Allocation"}</span></div>
@@ -497,6 +573,8 @@ export function generateInvoiceHtmlContent(
           </td>
         </tr>
       </table>
+
+      ${commercialHtml(false)}
 
       <!-- Particulars Table -->
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px;">
@@ -512,10 +590,10 @@ export function generateInvoiceHtmlContent(
           <tr style="border-bottom: 1px solid #e2e8f0; background-color: #ffffff;">
             <td style="padding: 14px 16px; font-weight: 600; color: #64748b;">01</td>
             <td style="padding: 14px 16px;">
-              <strong style="color: #0f172a; font-size: 13px; display: block; margin-bottom: 2px;">Unit Hold Reservation Fee / Initial Token Advance</strong>
-              <span style="font-size: 11px; color: #64748b;">Unit No. ${data.unitNumber || "N/A"} in ${data.projectName || "Project"}</span>
+              <strong style="color: #0f172a; font-size: 13px; display: block; margin-bottom: 2px;">${lineTitle}</strong>
+              <span style="font-size: 11px; color: #64748b;">${lineSub}</span>
             </td>
-            <td style="padding: 14px 16px; color: #475569; font-weight: 600;">Booking Advance</td>
+            <td style="padding: 14px 16px; color: #475569; font-weight: 600;">${lineCategory}</td>
             <td style="padding: 14px 16px; text-align: right; font-weight: 700; color: #0f172a; font-size: 13.5px;">${formattedAmount}</td>
           </tr>
           ${
@@ -541,7 +619,7 @@ export function generateInvoiceHtmlContent(
         <tr>
           <td style="width: 58%; vertical-align: top; padding-right: 12px;">
             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;">
-              <div style="font-size: 10px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px;">OFFICIAL BANK & ESCROW ACCOUNT DETAILS</div>
+              <div style="font-size: 10px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px;">${bankLabel}</div>
               <div style="font-size: 11px; color: #334155; line-height: 1.6;">
                 <div><strong>Bank Name:</strong> ${bank.bank_name}</div>
                 <div><strong>Account Name:</strong> ${bank.account_holder}</div>
@@ -553,7 +631,7 @@ export function generateInvoiceHtmlContent(
           </td>
           <td style="width: 42%; vertical-align: top; padding-left: 12px;">
             <div style="background-color: ${secondaryColor}; color: #ffffff; border-radius: 10px; padding: 18px; text-align: right;">
-              <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; font-weight: 700;">TOTAL AMOUNT PAID</div>
+              <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #a5b4fc; font-weight: 700;">${totalLabel}</div>
               <div style="font-size: 26px; font-weight: 800; color: #ffffff; margin-top: 6px; margin-bottom: 4px; letter-spacing: -0.5px;">${formattedTotalWithTax}</div>
               <div style="font-size: 10px; color: #34d399; font-weight: 700;">✓ FULL AMOUNT RECEIVED</div>
             </div>
@@ -565,11 +643,13 @@ export function generateInvoiceHtmlContent(
       <table style="width: 100%; border-collapse: collapse; border-top: 2px dashed #cbd5e1; padding-top: 18px; margin-top: 12px;">
         <tr>
           <td style="width: 65%; vertical-align: top; padding-right: 16px;">
-            <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">TERMS & CONDITIONS</div>
-            <div style="font-size: 10px; color: #64748b; line-height: 1.5; white-space: pre-wrap;">${notes.terms_and_conditions}</div>
+            <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">${termsLabel}</div>
+            <div style="font-size: 10px; color: #64748b; line-height: 1.5; white-space: pre-wrap;">${notes.terms_and_conditions}${notes.legal_disclaimer ? `\n${notes.legal_disclaimer}` : ""}</div>
           </td>
           <td style="width: 35%; vertical-align: bottom; text-align: center;">
             <div style="font-size: 11px; font-weight: 800; color: ${secondaryColor}; margin-bottom: 8px; white-space: nowrap;">${company.company_name.toUpperCase()}</div>
+            ${branding.signature_image_url ? `<img src="${branding.signature_image_url}" alt="Signature" style="height: 48px; margin: 0 auto 6px; display: block;" />` : ""}
+            ${branding.seal_image_url ? `<img src="${branding.seal_image_url}" alt="Seal" style="height: 56px; margin: 0 auto 6px; display: block;" />` : ""}
             <div style="margin-bottom: 8px;">
               <span style="font-size: 9px; color: ${primaryColor}; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border: 1.5px solid ${primaryColor}; padding: 3px 12px; border-radius: 4px; display: inline-block;">
                 SEAL & STAMP VERIFIED
@@ -895,71 +975,107 @@ export async function downloadCustomerStatementPdf(data: any, settings?: Invoice
     footer_info: "Official Customer Financial Ledger Statement generated under BLX CRM System.",
   };
 
+  const inr = (n: any) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+  const fmtDate = (d: any) => {
+    const dt = d ? new Date(d) : new Date();
+    return Number.isNaN(dt.getTime())
+      ? new Date().toLocaleDateString("en-IN")
+      : dt.toLocaleDateString("en-IN");
+  };
+  const address =
+    (company as any).registered_address ||
+    (company as any).address ||
+    "Level 14, BLX Financial Centre, MG Road, Bengaluru - 560001";
+  const items = Array.isArray(data.items) ? data.items : [];
+  const rowsHtml =
+    items.length === 0
+      ? `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #64748b;">No billed transactions on this account.</td></tr>`
+      : items
+          .map(
+            (it: any) => `
+          <tr>
+            <td style="padding: 8px 10px; color: #475569; border-bottom: 1px solid #e2e8f0; word-wrap: break-word;">${fmtDate(it.date)}</td>
+            <td style="padding: 8px 10px; font-weight: 700; border-bottom: 1px solid #e2e8f0; word-wrap: break-word;">${it.reference || "—"}</td>
+            <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; word-wrap: break-word;">${it.description || "—"}</td>
+            <td style="padding: 8px 10px; text-align: right; font-weight: 700; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">${inr(it.debit)}</td>
+            <td style="padding: 8px 10px; text-align: right; font-weight: 700; color: #059669; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">${inr(it.credit)}</td>
+          </tr>`,
+          )
+          .join("");
+
   const htmlStr = `
-  <div style="width: 794px; background: #ffffff; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; padding: 40px; box-sizing: border-box;">
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; border-b: 2px solid ${branding.primary_color}; padding-bottom: 16px;">
+  <div style="width: 794px; background: #ffffff; color: #0f172a; font-family: Arial, Helvetica, sans-serif; padding: 36px 40px; box-sizing: border-box;">
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px;">
       <tr>
-        <td style="vertical-align: top;">
-          <div style="font-size: 24px; font-weight: 800; color: ${branding.primary_color}; font-family: sans-serif;">${company.company_name}</div>
-          <div style="font-size: 11px; color: #475569; margin-top: 4px;">${(company as any).address || (company as any).registered_address || "Level 14, BLX Financial Centre, MG Road, Bengaluru - 560001"}</div>
+        <td style="width: 56%; vertical-align: top; padding-right: 16px;">
+          <div style="font-size: 20px; font-weight: 800; color: ${branding.primary_color}; line-height: 1.25; word-wrap: break-word;">${company.company_name}</div>
+          <div style="font-size: 11px; color: #475569; margin-top: 8px; line-height: 1.55; word-wrap: break-word; white-space: normal;">${address}</div>
         </td>
-        <td style="text-align: right; vertical-align: top;">
-          <div style="font-size: 18px; font-weight: 800; color: ${branding.primary_color}; text-transform: uppercase;">UNIFIED FINANCIAL STATEMENT</div>
-          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Generated: ${new Date().toLocaleDateString("en-IN")}</div>
+        <td style="width: 44%; vertical-align: top; text-align: right; padding-left: 12px;">
+          <div style="font-size: 13px; font-weight: 800; color: ${branding.primary_color}; letter-spacing: 0.4px; line-height: 1.35;">UNIFIED FINANCIAL STATEMENT</div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 8px;">Generated: ${new Date().toLocaleDateString("en-IN")}</div>
+        </td>
+      </tr>
+    </table>
+    <div style="height: 2px; background: ${branding.primary_color}; margin-bottom: 18px;"></div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+      <tr>
+        <td style="width: 48%; vertical-align: top; background: #f8fafc; border: 1px solid #cbd5e1; padding: 14px;">
+          <div style="font-size: 10px; font-weight: 800; color: ${branding.primary_color}; letter-spacing: 0.6px; margin-bottom: 6px;">CLIENT DOSSIER</div>
+          <div style="font-size: 15px; font-weight: 800; line-height: 1.3; word-wrap: break-word;">${data.customerName || "—"}</div>
+          <div style="font-size: 11px; color: #475569; margin-top: 6px; line-height: 1.5;">Phone: ${data.customerPhone || "N/A"}</div>
+          <div style="font-size: 11px; color: #475569; line-height: 1.5; word-wrap: break-word;">Email: ${data.customerEmail || "N/A"}</div>
+        </td>
+        <td style="width: 4%;"></td>
+        <td style="width: 48%; vertical-align: top; background: #f8fafc; border: 1px solid #cbd5e1; padding: 14px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 4px 8px 4px 0; font-size: 11px; color: #475569;">Total Contract Billed</td>
+              <td style="padding: 4px 0; text-align: right; font-size: 12px; font-weight: 800; white-space: nowrap;">${inr(data.totalBilled)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 8px 4px 0; font-size: 11px; color: #059669;">Total Collections Received</td>
+              <td style="padding: 4px 0; text-align: right; font-size: 12px; font-weight: 800; color: #059669; white-space: nowrap;">${inr(data.totalCollected)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 8px 0 0; font-size: 12px; font-weight: 800; color: #dc2626;">Outstanding Balance</td>
+              <td style="padding: 8px 0 0; text-align: right; font-size: 14px; font-weight: 800; color: #dc2626; white-space: nowrap;">${inr(data.outstandingBalance)}</td>
+            </tr>
+          </table>
         </td>
       </tr>
     </table>
 
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
-      <tr>
-        <td style="width: 50%; padding: 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;">
-          <div style="font-size: 10px; font-weight: 800; color: ${branding.primary_color}; text-transform: uppercase;">CLIENT DOSSIER</div>
-          <div style="font-size: 15px; font-weight: 800;">${data.customerName}</div>
-          <div style="font-size: 11px; color: #475569;">Phone: ${data.customerPhone || "N/A"}</div>
-          <div style="font-size: 11px; color: #475569;">Email: ${data.customerEmail || "N/A"}</div>
-        </td>
-        <td style="width: 50%; padding: 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; text-align: right;">
-          <div style="font-size: 11px; color: #475569;">Total Contract Billed: <strong>₹${Number(data.totalBilled || 0).toLocaleString("en-IN")}</strong></div>
-          <div style="font-size: 11px; color: #059669;">Total Collections Received: <strong>₹${Number(data.totalCollected || 0).toLocaleString("en-IN")}</strong></div>
-          <div style="font-size: 14px; font-weight: 800; color: #dc2626; margin-top: 4px;">Outstanding Balance: ₹${Number(data.outstandingBalance || 0).toLocaleString("en-IN")}</div>
-        </td>
-      </tr>
-    </table>
-
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 11px; border: 1px solid #cbd5e1;">
+    <table style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 28px; font-size: 11px; border: 1px solid #cbd5e1;">
+      <colgroup>
+        <col style="width: 16%" />
+        <col style="width: 22%" />
+        <col style="width: 30%" />
+        <col style="width: 16%" />
+        <col style="width: 16%" />
+      </colgroup>
       <thead>
-        <tr style="background: ${branding.primary_color}; color: #ffffff; font-size: 10px; text-transform: uppercase;">
-          <th style="padding: 8px; text-align: left;">Date</th>
-          <th style="padding: 8px; text-align: left;">Document / Voucher</th>
-          <th style="padding: 8px; text-align: left;">Description</th>
-          <th style="padding: 8px; text-align: right;">Billed (Debit)</th>
-          <th style="padding: 8px; text-align: right;">Paid (Credit)</th>
+        <tr style="background: ${branding.primary_color}; color: #ffffff;">
+          <th style="padding: 9px 10px; text-align: left; font-size: 10px;">DATE</th>
+          <th style="padding: 9px 10px; text-align: left; font-size: 10px;">DOCUMENT / VOUCHER</th>
+          <th style="padding: 9px 10px; text-align: left; font-size: 10px;">DESCRIPTION</th>
+          <th style="padding: 9px 10px; text-align: right; font-size: 10px;">BILLED (DEBIT)</th>
+          <th style="padding: 9px 10px; text-align: right; font-size: 10px;">PAID (CREDIT)</th>
         </tr>
       </thead>
       <tbody>
-        ${(data.items || [])
-          .map(
-            (it: any) => `
-          <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 8px; color: #475569;">${new Date(it.date).toLocaleDateString("en-IN")}</td>
-            <td style="padding: 8px; font-weight: 700;">${it.reference}</td>
-            <td style="padding: 8px;">${it.description}</td>
-            <td style="padding: 8px; text-align: right; font-weight: 700;">${it.debit ? `₹${Number(it.debit).toLocaleString("en-IN")}` : "-"}</td>
-            <td style="padding: 8px; text-align: right; font-weight: 700; color: #059669;">${it.credit ? `₹${Number(it.credit).toLocaleString("en-IN")}` : "-"}</td>
-          </tr>
-        `,
-          )
-          .join("")}
+        ${rowsHtml}
       </tbody>
     </table>
 
     <table style="width: 100%; border-collapse: collapse;">
       <tr>
-        <td style="vertical-align: bottom;">
-          <div style="font-size: 10px; color: #64748b;">${branding.footer_info}</div>
+        <td style="vertical-align: bottom; padding-right: 16px;">
+          <div style="font-size: 10px; color: #64748b; line-height: 1.45; word-wrap: break-word;">${branding.footer_info || ""}</div>
         </td>
-        <td style="text-align: right; vertical-align: bottom; width: 220px;">
-          <div style="border-bottom: 1.5px solid #0f172a; padding-bottom: 4px; margin-bottom: 4px; font-size: 12px; font-weight: 800;">${(branding as any).authorized_signatory || (branding as any).signatory_name || "Managing Director / Chief Financial Officer"}</div>
+        <td style="text-align: right; vertical-align: bottom; width: 240px;">
+          <div style="border-bottom: 1.5px solid #0f172a; padding-bottom: 4px; margin-bottom: 4px; font-size: 12px; font-weight: 800; word-wrap: break-word;">${(branding as any).authorized_signatory || (branding as any).signatory_name || "Managing Director / Chief Financial Officer"}</div>
           <div style="font-size: 10px; color: #475569;">Authorized Signatory</div>
         </td>
       </tr>

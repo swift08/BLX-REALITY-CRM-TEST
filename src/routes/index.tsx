@@ -42,8 +42,7 @@ import {
   Maximize2,
   FileBarChart2,
   FileCheck,
-  DollarSign,
-  CircleDollarSign,
+  IndianRupee,
   Search,
   ExternalLink,
 } from "lucide-react";
@@ -115,12 +114,10 @@ const tempLabels: Record<Temp, string> = {
 };
 
 const pipelineStages: Stage[] = [
-  "new",
   "connected",
   "interested",
   "negotiation",
   "booking_initiated",
-  "payment_completed",
   "converted",
 ];
 
@@ -1096,7 +1093,7 @@ function Dashboard() {
                       <p className="text-[9px] text-muted-foreground mt-0.5">Received Cash</p>
                     </div>
                     <div className="p-2 rounded bg-primary/10 text-primary">
-                      <DollarSign className="h-4 w-4" />
+                      <IndianRupee className="h-4 w-4" />
                     </div>
                   </CardContent>
                 </Card>
@@ -1122,7 +1119,7 @@ function Dashboard() {
                       <p className="text-[9px] text-muted-foreground mt-0.5">Commission Profit</p>
                     </div>
                     <div className="p-2 rounded bg-emerald-500/10 text-emerald-500">
-                      <CircleDollarSign className="h-4 w-4" />
+                      <IndianRupee className="h-4 w-4" />
                     </div>
                   </CardContent>
                 </Card>
@@ -1330,7 +1327,7 @@ function Pipeline({ customers }: { customers: any[] }) {
         </p>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-3 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           {pipelineStages.map((s, i) => (
             <div
               key={s}

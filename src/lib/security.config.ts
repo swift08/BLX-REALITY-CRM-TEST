@@ -17,7 +17,7 @@ export const securityConfig: SecurityConfig = {
   clipboardBlocking: true,
   printBlocking: true,
   idleTimeout: true,
-  idleTimeoutMs: 15 * 60 * 1000, // 15 minutes
+  idleTimeoutMs: 30 * 60 * 1000, // 30 minutes
   sessionLimits: true,
   deviceBinding: true,
   exportRestrictions: true,

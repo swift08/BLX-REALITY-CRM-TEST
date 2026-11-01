@@ -24,6 +24,8 @@ import {
   type InvoiceSettings,
   type InvoiceRolePermission,
   type UserInvoicePermission,
+  type InvoiceContent,
+  DEFAULT_INVOICE_CONTENT,
 } from "@/lib/queries";
 import { generateInvoiceHtmlContent, downloadPdfInvoice } from "@/lib/pdf-generator";
 import {
@@ -40,7 +42,7 @@ import {
   Download,
   AlertTriangle,
   QrCode,
-  DollarSign,
+  IndianRupee,
   FileSpreadsheet,
   Users,
 } from "lucide-react";
@@ -168,19 +170,23 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
     qr_instructions:
       "Scan UPI QR code using any UPI Banking App to complete instant token transfer.",
   },
+  content: DEFAULT_INVOICE_CONTENT,
   default_template_id: "modern_executive",
 };
 
   useEffect(() => {
     if (settingsData) {
-      setFormData(settingsData);
+      setFormData({
+        ...settingsData,
+        content: { ...DEFAULT_INVOICE_CONTENT, ...(settingsData.content || {}) },
+      });
       if (settingsData.default_template_id) {
         setSelectedTemplate(settingsData.default_template_id);
       }
-    } else if (!isSettingsLoading && !formData) {
+    } else if (!isSettingsLoading) {
       setFormData(DEFAULT_INVOICE_SETTINGS);
     }
-  }, [settingsData, isSettingsLoading, formData]);
+  }, [settingsData, isSettingsLoading]);
 
   useEffect(() => {
     if (permissionsData && !rolePermsDirtyRef.current) {
@@ -321,16 +327,31 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
     }
   };
 
-  // Sample data for live preview
+  const invoiceContent: InvoiceContent = {
+    ...DEFAULT_INVOICE_CONTENT,
+    ...(formData.content || {}),
+  };
+
+  const patchContent = (patch: Partial<InvoiceContent>) =>
+    setFormData({ ...formData, content: { ...invoiceContent, ...patch } });
+
+  const canEditContent =
+    userCan.editInvoiceCompanyInfo() || userCan.manageInvoiceTemplates();
+
+  // Sample data for live preview — driven by CMS content fields
   const sampleInvoiceData = {
     bookingId: "book-9941",
-    customerName: "Ananya Sharma",
-    customerPhone: "+91 98450 12345",
-    customerEmail: "ananya.sharma@example.com",
-    projectName: "BLX Platinum Heights, Indiranagar",
-    unitNumber: "A-1402 (3BHK Luxury)",
-    amount: 500000,
+    customerName: invoiceContent.sample_customer_name,
+    customerPhone: invoiceContent.sample_customer_phone,
+    customerEmail: invoiceContent.sample_customer_email,
+    projectName: invoiceContent.sample_project_name,
+    unitNumber: invoiceContent.sample_unit_number,
+    amount: invoiceContent.sample_amount,
     bookingDate: new Date().toISOString(),
+    customInvoiceNum: invoiceContent.sample_invoice_number,
+    originalPrice: invoiceContent.sample_original_price,
+    negotiatedPrice: invoiceContent.sample_negotiated_price,
+    commissionRate: invoiceContent.commission_rate,
   };
 
   const sampleHtml = generateInvoiceHtmlContent(sampleInvoiceData, formData, selectedTemplate);
@@ -409,7 +430,10 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
               <Layout className="h-3.5 w-3.5" /> Templates & Preview
             </TabsTrigger>
             <TabsTrigger value="numbering" className="text-xs gap-1.5 py-2 px-3">
-              <DollarSign className="h-3.5 w-3.5" /> Numbering & Methods
+              <IndianRupee className="h-3.5 w-3.5" /> Numbering & Methods
+            </TabsTrigger>
+            <TabsTrigger value="content" className="text-xs gap-1.5 py-2 px-3">
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Amounts & Content
             </TabsTrigger>
             {role === "super_admin" && (
               <TabsTrigger
@@ -1151,6 +1175,25 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
                   </div>
                 </div>
 
+                <div className="space-y-1.5">
+                  <Label htmlFor="legal-disc">Legal Disclaimer</Label>
+                  <Textarea
+                    id="legal-disc"
+                    rows={2}
+                    value={formData.invoice_notes.legal_disclaimer}
+                    disabled={!userCan.editInvoiceTerms()}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        invoice_notes: {
+                          ...formData.invoice_notes,
+                          legal_disclaimer: e.target.value,
+                        },
+                      })
+                    }
+                  />
+                </div>
+
                 {userCan.editInvoiceTerms() && (
                   <div className="pt-2 flex justify-end">
                     <Button
@@ -1294,6 +1337,68 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="text-color">Body Text Color</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        id="text-color"
+                        className="h-9 w-12 rounded cursor-pointer border p-1"
+                        value={formData.branding.text_color || "#0f172a"}
+                        disabled={!userCan.changeInvoiceBranding()}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            branding: { ...formData.branding, text_color: e.target.value },
+                          })
+                        }
+                      />
+                      <Input
+                        value={formData.branding.text_color || "#0f172a"}
+                        className="font-mono text-xs"
+                        disabled={!userCan.changeInvoiceBranding()}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            branding: { ...formData.branding, text_color: e.target.value },
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sign-img">Signature Image URL</Label>
+                    <Input
+                      id="sign-img"
+                      placeholder="https://... or data:image/png;base64,..."
+                      value={formData.branding.signature_image_url}
+                      disabled={!userCan.changeInvoiceBranding()}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          branding: { ...formData.branding, signature_image_url: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="seal-img">Seal / Stamp Image URL</Label>
+                    <Input
+                      id="seal-img"
+                      placeholder="https://... or data:image/png;base64,..."
+                      value={formData.branding.seal_image_url}
+                      disabled={!userCan.changeInvoiceBranding()}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          branding: { ...formData.branding, seal_image_url: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
                   <Label htmlFor="footer-info">Corporate Footer Info Banner</Label>
                   <Input
@@ -1416,7 +1521,7 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <DollarSign className="h-4 w-4 text-primary" /> Invoice Numbering & Payment
+                  <IndianRupee className="h-4 w-4 text-primary" /> Invoice Numbering & Payment
                   Instructions
                 </CardTitle>
                 <CardDescription className="text-xs">
@@ -1547,6 +1652,25 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
                   />
                 </div>
 
+                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                  <div>
+                    <div className="font-semibold text-sm">Auto-increment invoice numbers</div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Advance the sequence after each issued invoice
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.numbering.auto_increment !== false}
+                    disabled={!userCan.editInvoiceCompanyInfo()}
+                    onCheckedChange={(checked) =>
+                      setFormData({
+                        ...formData,
+                        numbering: { ...formData.numbering, auto_increment: checked },
+                      })
+                    }
+                  />
+                </div>
+
                 {userCan.editInvoiceCompanyInfo() && (
                   <div className="pt-2 flex justify-end">
                     <Button
@@ -1555,6 +1679,305 @@ const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
                       disabled={savingSection !== null}
                     >
                       <Save className="h-3.5 w-3.5 mr-1.5" /> Save Numbering & Methods
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* 7b. AMOUNTS & INVOICE CONTENT */}
+          <TabsContent value="content" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4 text-primary" /> Invoice Amounts, Numbers &amp;
+                  Section Labels
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Edit invoice number, billed amount, commission, negotiated price, and every label
+                  printed on the invoice. Preview updates live in Templates.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sample-inv-no">Invoice Number</Label>
+                    <Input
+                      id="sample-inv-no"
+                      className="font-mono"
+                      value={invoiceContent.sample_invoice_number}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ sample_invoice_number: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sample-amount">Invoice Amount (₹)</Label>
+                    <Input
+                      id="sample-amount"
+                      type="number"
+                      value={invoiceContent.sample_amount}
+                      disabled={!canEditContent}
+                      onChange={(e) =>
+                        patchContent({ sample_amount: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="orig-price">Original List Price (₹)</Label>
+                    <Input
+                      id="orig-price"
+                      type="number"
+                      value={invoiceContent.sample_original_price}
+                      disabled={!canEditContent}
+                      onChange={(e) =>
+                        patchContent({ sample_original_price: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="neg-price">Price After Negotiation (₹)</Label>
+                    <Input
+                      id="neg-price"
+                      type="number"
+                      value={invoiceContent.sample_negotiated_price}
+                      disabled={!canEditContent}
+                      onChange={(e) =>
+                        patchContent({ sample_negotiated_price: parseFloat(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl border bg-muted/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-xs">Show negotiated prices</div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Print original vs agreed price on the invoice
+                        </p>
+                      </div>
+                      <Switch
+                        checked={invoiceContent.show_negotiated_price}
+                        disabled={!canEditContent}
+                        onCheckedChange={(checked) =>
+                          patchContent({ show_negotiated_price: checked })
+                        }
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Original price label</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          value={invoiceContent.original_price_label}
+                          disabled={!canEditContent}
+                          onChange={(e) => patchContent({ original_price_label: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Negotiated price label</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          value={invoiceContent.negotiated_price_label}
+                          disabled={!canEditContent}
+                          onChange={(e) => patchContent({ negotiated_price_label: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl border bg-muted/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-xs">Show commission / brokerage</div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Print commission rate and amount on the invoice
+                        </p>
+                      </div>
+                      <Switch
+                        checked={invoiceContent.show_commission}
+                        disabled={!canEditContent}
+                        onCheckedChange={(checked) => patchContent({ show_commission: checked })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Commission rate (%)</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          type="number"
+                          value={invoiceContent.commission_rate}
+                          disabled={!canEditContent}
+                          onChange={(e) =>
+                            patchContent({ commission_rate: parseFloat(e.target.value) || 0 })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Commission label</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          value={invoiceContent.commission_label}
+                          disabled={!canEditContent}
+                          onChange={(e) => patchContent({ commission_label: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="doc-title">Document title</Label>
+                    <Input
+                      id="doc-title"
+                      value={invoiceContent.document_title}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ document_title: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="billed-label">Billed-to heading</Label>
+                    <Input
+                      id="billed-label"
+                      value={invoiceContent.billed_to_label}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ billed_to_label: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="prop-label">Property heading</Label>
+                    <Input
+                      id="prop-label"
+                      value={invoiceContent.property_label}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ property_label: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="line-title">Line item title</Label>
+                    <Input
+                      id="line-title"
+                      value={invoiceContent.line_item_title}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ line_item_title: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="line-sub">Line item subtitle</Label>
+                    <Input
+                      id="line-sub"
+                      placeholder="Unit No. {unit} in {project}"
+                      value={invoiceContent.line_item_subtitle}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ line_item_subtitle: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="line-cat">Line item category</Label>
+                    <Input
+                      id="line-cat"
+                      value={invoiceContent.line_item_category}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ line_item_category: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="status-badge">Status badge</Label>
+                    <Input
+                      id="status-badge"
+                      value={invoiceContent.status_badge}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ status_badge: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="total-label">Total label</Label>
+                    <Input
+                      id="total-label"
+                      value={invoiceContent.total_label}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ total_label: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="bank-label">Bank section heading</Label>
+                    <Input
+                      id="bank-label"
+                      value={invoiceContent.bank_section_label}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ bank_section_label: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="terms-label">Terms heading</Label>
+                    <Input
+                      id="terms-label"
+                      value={invoiceContent.terms_label}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ terms_label: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sample-cust">Preview customer name</Label>
+                    <Input
+                      id="sample-cust"
+                      value={invoiceContent.sample_customer_name}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ sample_customer_name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sample-phone">Preview phone</Label>
+                    <Input
+                      id="sample-phone"
+                      value={invoiceContent.sample_customer_phone}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ sample_customer_phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sample-email">Preview email</Label>
+                    <Input
+                      id="sample-email"
+                      value={invoiceContent.sample_customer_email}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ sample_customer_email: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sample-project">Preview project</Label>
+                    <Input
+                      id="sample-project"
+                      value={invoiceContent.sample_project_name}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ sample_project_name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="sample-unit">Preview unit</Label>
+                    <Input
+                      id="sample-unit"
+                      value={invoiceContent.sample_unit_number}
+                      disabled={!canEditContent}
+                      onChange={(e) => patchContent({ sample_unit_number: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {canEditContent && (
+                  <div className="pt-2 flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={() => handleSaveSettings("Invoice Content")}
+                      disabled={savingSection !== null}
+                    >
+                      <Save className="h-3.5 w-3.5 mr-1.5" /> Save Amounts &amp; Content
                     </Button>
                   </div>
                 )}

@@ -166,6 +166,11 @@ export function RevenueOpsWorkspace({
   const [invoiceDueDate, setInvoiceDueDate] = useState<string>(
     new Date(Date.now() + 15 * 86400000).toISOString().split("T")[0],
   );
+  const [issueInvoiceNo, setIssueInvoiceNo] = useState("");
+  const [issueAmount, setIssueAmount] = useState("");
+  const [issueOrigPrice, setIssueOrigPrice] = useState("");
+  const [issueNegPrice, setIssueNegPrice] = useState("");
+  const [issueCommission, setIssueCommission] = useState("");
   const [payAmount, setPayAmount] = useState<string>("");
   const [payMethod, setPayMethod] = useState<string>("bank_transfer");
   const [payReference, setPayReference] = useState<string>("");
@@ -552,6 +557,7 @@ export function RevenueOpsWorkspace({
 
     if (item.isIssued) {
       toast.info(`Invoice ${item.invoiceNumber} is officially issued & locked.`);
+      const snap = item.invoice?.snapshot || {};
       downloadPdfInvoice(
         {
           bookingId: item.id,
@@ -562,12 +568,26 @@ export function RevenueOpsWorkspace({
           unitNumber: item.unit_number,
           amount: item.totalBilled,
           paymentStatus: item.booking?.payment_status,
+          customInvoiceNum: item.invoiceNumber,
+          originalPrice: snap.original_price,
+          negotiatedPrice: snap.negotiated_price,
+          commissionRate: snap.commission_rate,
         },
         invoiceSettings,
       );
       return;
     }
 
+    const numbering = invoiceSettings?.numbering;
+    const seq = numbering?.start_sequence ?? 1001;
+    const pad = numbering?.padding ?? 4;
+    setIssueInvoiceNo(
+      `${numbering?.prefix ?? "INV-2026-"}${String(seq).padStart(pad, "0")}${numbering?.suffix ?? "/BLX"}`,
+    );
+    setIssueAmount(String(item.totalBilled || 0));
+    setIssueOrigPrice(String(item.amount || item.totalBilled || 0));
+    setIssueNegPrice(String(item.totalBilled || 0));
+    setIssueCommission(String(invoiceSettings?.content?.commission_rate ?? 2));
     setSelectedBookingForInvoice(item);
   };
 
@@ -579,13 +599,22 @@ export function RevenueOpsWorkspace({
       toast.loading("Issuing official tax invoice & locking booking contract...", {
         id: "issue-inv",
       });
+      const billedAmount = parseFloat(issueAmount) || selectedBookingForInvoice.totalBilled || 0;
+      const origPrice = parseFloat(issueOrigPrice) || billedAmount;
+      const negPrice = parseFloat(issueNegPrice) || billedAmount;
+      const commission = parseFloat(issueCommission) || 0;
+
       const snapshot = {
         customer_name: selectedBookingForInvoice.customer_name,
         customer_phone: selectedBookingForInvoice.customer_phone,
         customer_email: selectedBookingForInvoice.customer_email,
         project_name: selectedBookingForInvoice.project_name,
         unit_number: selectedBookingForInvoice.unit_number,
-        amount: selectedBookingForInvoice.totalBilled,
+        amount: billedAmount,
+        original_price: origPrice,
+        negotiated_price: negPrice,
+        commission_rate: commission,
+        invoice_number: issueInvoiceNo,
         issued_at: new Date().toISOString(),
         cms_settings: invoiceSettings,
       };
@@ -594,6 +623,11 @@ export function RevenueOpsWorkspace({
         bookingId: selectedBookingForInvoice.id,
         dueDate: invoiceDueDate,
         snapshot,
+        invoiceNumber: issueInvoiceNo,
+        amount: billedAmount,
+        originalPrice: origPrice,
+        negotiatedPrice: negPrice,
+        commissionRate: commission,
       });
 
       toast.success(`Tax Invoice issued successfully! Booking contract is now LOCKED 🔒.`, {
@@ -608,8 +642,12 @@ export function RevenueOpsWorkspace({
           customerEmail: selectedBookingForInvoice.customer_email,
           projectName: selectedBookingForInvoice.project_name,
           unitNumber: selectedBookingForInvoice.unit_number,
-          amount: selectedBookingForInvoice.totalBilled,
+          amount: billedAmount,
           paymentStatus: selectedBookingForInvoice.booking?.payment_status,
+          customInvoiceNum: issueInvoiceNo,
+          originalPrice: origPrice,
+          negotiatedPrice: negPrice,
+          commissionRate: commission,
         },
         invoiceSettings,
       );
@@ -1679,7 +1717,7 @@ export function RevenueOpsWorkspace({
         open={Boolean(selectedBookingForInvoice)}
         onOpenChange={(open) => !open && setSelectedBookingForInvoice(null)}
       >
-        <DialogContent className="max-w-md bg-card rounded-xl border border-border shadow-2xl p-6">
+        <DialogContent className="max-w-lg bg-card rounded-xl border border-border shadow-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-base font-bold font-display text-foreground flex items-center gap-2">
               <Receipt className="h-5 w-5 text-primary" /> Confirm Tax Invoice Issuance
@@ -1709,9 +1747,68 @@ export function RevenueOpsWorkspace({
                   <div>
                     <strong>Unit:</strong> {selectedBookingForInvoice.unit_number}
                   </div>
-                  <div className="col-span-2 font-bold text-foreground">
-                    <strong>Billed Amount:</strong> ₹{(selectedBookingForInvoice.totalBilled || 0).toLocaleString("en-IN")}
-                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 col-span-2">
+                  <Label htmlFor="issue-inv-no" className="text-xs font-semibold">
+                    Invoice Number
+                  </Label>
+                  <Input
+                    id="issue-inv-no"
+                    className="h-9 text-xs font-mono"
+                    value={issueInvoiceNo}
+                    onChange={(e) => setIssueInvoiceNo(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="issue-amount" className="text-xs font-semibold">
+                    Invoice Amount (₹)
+                  </Label>
+                  <Input
+                    id="issue-amount"
+                    type="number"
+                    className="h-9 text-xs"
+                    value={issueAmount}
+                    onChange={(e) => setIssueAmount(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="issue-commission" className="text-xs font-semibold">
+                    Commission Rate (%)
+                  </Label>
+                  <Input
+                    id="issue-commission"
+                    type="number"
+                    className="h-9 text-xs"
+                    value={issueCommission}
+                    onChange={(e) => setIssueCommission(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="issue-orig" className="text-xs font-semibold">
+                    Original List Price (₹)
+                  </Label>
+                  <Input
+                    id="issue-orig"
+                    type="number"
+                    className="h-9 text-xs"
+                    value={issueOrigPrice}
+                    onChange={(e) => setIssueOrigPrice(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="issue-neg" className="text-xs font-semibold">
+                    Price After Negotiation (₹)
+                  </Label>
+                  <Input
+                    id="issue-neg"
+                    type="number"
+                    className="h-9 text-xs"
+                    value={issueNegPrice}
+                    onChange={(e) => setIssueNegPrice(e.target.value)}
+                  />
                 </div>
               </div>
 

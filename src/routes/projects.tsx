@@ -50,7 +50,7 @@ import {
   Check,
   Search,
   AlertTriangle,
-  CircleDollarSign,
+  IndianRupee,
   Ruler,
   User,
   Calendar,
@@ -1718,7 +1718,7 @@ function ProjectsPage() {
                   <div className="space-y-1.5 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
                     <Label htmlFor="eprofit" className="flex items-center justify-between text-xs font-semibold">
                       <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
-                        <CircleDollarSign className="h-4 w-4" />
+                        <IndianRupee className="h-4 w-4" />
                         Project Profit Margin (%) *
                       </span>
                       <span className="text-[11px] font-medium text-muted-foreground">

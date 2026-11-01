@@ -703,9 +703,7 @@ export function useBookings() {
       const projects = (await callApi("getProjects")) as ProjectRow[];
       const inventory = (await callApi("getInventory")) as UnitRow[];
 
-      return rawBookings.map((bk) => {
-        let customerName = "Unknown Customer";
-        let leadId = "";
+      return rawBookings.flatMap((bk) => {
         let projectName = "Unknown Project";
         let unitNumber = "Unknown Unit";
 
@@ -720,10 +718,10 @@ export function useBookings() {
           }
         }
 
-        if (foundCust) {
-          customerName = foundCust.name;
-          leadId = foundCust.id;
-        }
+        if (!foundCust || foundCust.is_deleted) return [];
+
+        const customerName = foundCust.name;
+        const leadId = foundCust.id;
 
         if (foundOpp) {
           const projectKey = (foundOpp as any).projectId || (foundOpp as any).project_id;
@@ -798,7 +796,16 @@ export function useBookings() {
 export function useCreateBookingInvoice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { bookingId: string; dueDate?: string; snapshot?: any }) => {
+    mutationFn: async (payload: {
+      bookingId: string;
+      dueDate?: string;
+      snapshot?: any;
+      invoiceNumber?: string;
+      amount?: number;
+      originalPrice?: number;
+      negotiatedPrice?: number;
+      commissionRate?: number;
+    }) => {
       return callApi("createBookingInvoice", payload);
     },
     onSuccess: () => {
@@ -921,12 +928,10 @@ export function useFollowups() {
       const list = (await callApi("getFollowups")) as any[];
       const customers = (await callApi("getLeads")) as Customer[];
 
-      return list.map((f) => {
+      return list.flatMap((f) => {
         const c = customers.find((cust) => cust.id === f.lead_id);
-        return {
-          ...f,
-          customer_name: c ? c.name : "Unknown",
-        };
+        if (!c || c.is_deleted) return [];
+        return [{ ...f, customer_name: c.name }];
       }) as FollowupRow[];
     },
   });
@@ -967,7 +972,12 @@ export function useCalendarEvents() {
   return useQuery({
     queryKey: ["calendar-events", activeRole],
     queryFn: async () => {
-      return callApi("getCalendarEvents") as Promise<CalendarEvent[]>;
+      const events = (await callApi("getCalendarEvents")) as CalendarEvent[];
+      const customers = (await callApi("getLeads")) as Customer[];
+      const activeIds = new Set(
+        customers.filter((c) => !c.is_deleted).map((c) => c.id),
+      );
+      return events.filter((e) => !e.customerId || activeIds.has(e.customerId));
     },
   });
 }
@@ -1463,6 +1473,62 @@ export interface InvoicePaymentInfo {
   qr_instructions: string;
 }
 
+export interface InvoiceContent {
+  document_title: string;
+  billed_to_label: string;
+  property_label: string;
+  line_item_title: string;
+  line_item_subtitle: string;
+  line_item_category: string;
+  status_badge: string;
+  total_label: string;
+  bank_section_label: string;
+  terms_label: string;
+  show_commission: boolean;
+  commission_rate: number;
+  commission_label: string;
+  show_negotiated_price: boolean;
+  original_price_label: string;
+  negotiated_price_label: string;
+  sample_invoice_number: string;
+  sample_amount: number;
+  sample_original_price: number;
+  sample_negotiated_price: number;
+  sample_customer_name: string;
+  sample_customer_phone: string;
+  sample_customer_email: string;
+  sample_project_name: string;
+  sample_unit_number: string;
+}
+
+export const DEFAULT_INVOICE_CONTENT: InvoiceContent = {
+  document_title: "TAX INVOICE",
+  billed_to_label: "BILLED TO (CLIENT DETAILS)",
+  property_label: "PROPERTY ALLOCATION DETAILS",
+  line_item_title: "Unit Hold Reservation Fee / Initial Token Advance",
+  line_item_subtitle: "Unit No. {unit} in {project}",
+  line_item_category: "Booking Advance",
+  status_badge: "PAID & CONFIRMED",
+  total_label: "TOTAL AMOUNT PAID",
+  bank_section_label: "OFFICIAL BANK & ESCROW ACCOUNT DETAILS",
+  terms_label: "TERMS & CONDITIONS",
+  show_commission: true,
+  commission_rate: 2,
+  commission_label: "Brokerage / Commission",
+  show_negotiated_price: true,
+  original_price_label: "Original List Price",
+  negotiated_price_label: "Price After Negotiation",
+  sample_invoice_number: "INV-2026-1001/BLX",
+  sample_amount: 500000,
+  sample_original_price: 550000,
+  sample_negotiated_price: 500000,
+  sample_customer_name: "Ananya Sharma",
+  sample_customer_phone: "+91 98450 12345",
+  sample_customer_email: "ananya.sharma@example.com",
+  sample_project_name: "BLX Platinum Heights, Indiranagar",
+  sample_unit_number: "A-1402 (3BHK Luxury)",
+};
+
 export interface InvoiceSettings {
   id: string;
   company_info: InvoiceCompanyInfo;
@@ -1472,6 +1538,7 @@ export interface InvoiceSettings {
   branding: InvoiceBranding;
   numbering: InvoiceNumbering;
   payment_info: InvoicePaymentInfo;
+  content?: InvoiceContent;
   default_template_id: string;
   updated_at?: string;
   updated_by?: string;

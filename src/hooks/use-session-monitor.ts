@@ -3,8 +3,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { safeLogger } from "@/lib/safe-logger";
+import { securityConfig } from "@/lib/security.config";
 
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 Minutes
+const IDLE_TIMEOUT_MS = securityConfig.idleTimeoutMs;
 
 export function useSessionMonitor() {
   const { signOut, user, loading } = useAuth();

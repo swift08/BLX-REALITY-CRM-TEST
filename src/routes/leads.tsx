@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
@@ -21,6 +21,8 @@ import {
   useCalendarEvents,
   useCRMUsers,
   useInvoiceSettings,
+  DEFAULT_INVOICE_CONTENT,
+  type InvoiceSettings,
   useNegotiation,
   useUpdateNegotiation,
   useAddNegotiationRound,
@@ -84,7 +86,7 @@ import {
   Plus,
   Check,
   X,
-  DollarSign,
+  IndianRupee,
   Paperclip,
   ChevronRight,
   TrendingUp,
@@ -103,6 +105,7 @@ import {
   Compass,
   UserCheck,
   UserPlus,
+  Receipt,
 } from "lucide-react";
 
 import {
@@ -122,6 +125,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 
 const stageLabels: Record<Stage, string> = {
   new: "New Lead",
@@ -919,6 +923,194 @@ const parseBudget = (budgetStr: string | null | undefined) => {
   };
 };
 
+function SuperAdminBookingInvoiceCms({
+  booking,
+  customer,
+  projectName,
+  unitNumber,
+  invoiceSettings,
+}: {
+  booking: any;
+  customer: Customer;
+  projectName: string;
+  unitNumber: string;
+  invoiceSettings?: InvoiceSettings;
+}) {
+  const numbering = invoiceSettings?.numbering;
+  const content = { ...DEFAULT_INVOICE_CONTENT, ...(invoiceSettings?.content || {}) };
+  const seq = numbering?.start_sequence ?? 1001;
+  const pad = numbering?.padding ?? 4;
+  const defaultNo =
+    booking.invoice_number ||
+    booking.snapshot?.invoice_number ||
+    `${numbering?.prefix ?? "INV-2026-"}${String(seq).padStart(pad, "0")}${numbering?.suffix ?? "/BLX"}`;
+  const snap = booking.snapshot || {};
+
+  const [invoiceNo, setInvoiceNo] = useState(defaultNo);
+  const [amount, setAmount] = useState(String(booking.amount || 0));
+  const [origPrice, setOrigPrice] = useState(String(snap.original_price ?? booking.amount ?? 0));
+  const [negPrice, setNegPrice] = useState(String(snap.negotiated_price ?? booking.amount ?? 0));
+  const [commission, setCommission] = useState(
+    String(snap.commission_rate ?? content.commission_rate ?? 2),
+  );
+  const tax = invoiceSettings?.tax_statutory;
+  const [gstOn, setGstOn] = useState(
+    snap.gst_enabled != null ? Boolean(snap.gst_enabled) : (tax?.gst_enabled ?? true),
+  );
+  const [cgstRate, setCgstRate] = useState(String(snap.cgst_rate ?? tax?.cgst_rate ?? 9));
+  const [sgstRate, setSgstRate] = useState(String(snap.sgst_rate ?? tax?.sgst_rate ?? 9));
+  const [igstRate, setIgstRate] = useState(String(snap.igst_rate ?? tax?.igst_rate ?? 18));
+
+  const billed = parseFloat(amount) || 0;
+  const cgst = parseFloat(cgstRate) || 0;
+  const sgst = parseFloat(sgstRate) || 0;
+  const gstAmount = gstOn ? (billed * (cgst + sgst)) / 100 : 0;
+  const grandTotal = billed + gstAmount;
+
+  const handleDownload = () => {
+    downloadPdfInvoice(
+      {
+        bookingId: booking.id,
+        leadId: customer.id,
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        customerEmail: customer.email || undefined,
+        projectName,
+        unitNumber,
+        amount: billed,
+        paymentStatus: booking.payment_status,
+        customInvoiceNum: invoiceNo,
+        originalPrice: parseFloat(origPrice) || 0,
+        negotiatedPrice: parseFloat(negPrice) || 0,
+        commissionRate: parseFloat(commission) || 0,
+      },
+      invoiceSettings
+        ? {
+            ...invoiceSettings,
+            tax_statutory: {
+              ...invoiceSettings.tax_statutory,
+              gst_enabled: gstOn,
+              cgst_rate: cgst,
+              sgst_rate: sgst,
+              igst_rate: parseFloat(igstRate) || 0,
+            },
+          }
+        : invoiceSettings,
+    );
+  };
+
+  return (
+    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-bold text-[11px] uppercase tracking-wider text-primary flex items-center gap-1.5">
+          <Receipt className="h-3.5 w-3.5" /> Invoice CMS
+        </div>
+        <Link
+          to="/invoice-cms"
+          className="text-[10px] font-semibold text-primary hover:underline"
+        >
+          Full CMS →
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1 col-span-2">
+          <Label className="text-[10px]">Invoice Number</Label>
+          <Input
+            className="h-8 text-xs font-mono"
+            value={invoiceNo}
+            onChange={(e) => setInvoiceNo(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px]">Invoice Amount (₹)</Label>
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px]">Commission (%)</Label>
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            value={commission}
+            onChange={(e) => setCommission(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px]">Original List Price (₹)</Label>
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            value={origPrice}
+            onChange={(e) => setOrigPrice(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px]">Price After Negotiation (₹)</Label>
+          <Input
+            className="h-8 text-xs"
+            type="number"
+            value={negPrice}
+            onChange={(e) => setNegPrice(e.target.value)}
+          />
+        </div>
+        <div className="col-span-2 flex items-center justify-between rounded-md border bg-background/60 px-2 py-1.5">
+          <Label className="text-[10px] font-semibold">GST on invoice</Label>
+          <Switch checked={gstOn} onCheckedChange={setGstOn} />
+        </div>
+        {gstOn && (
+          <>
+            <div className="space-y-1">
+              <Label className="text-[10px]">CGST (%)</Label>
+              <Input
+                className="h-8 text-xs"
+                type="number"
+                value={cgstRate}
+                onChange={(e) => setCgstRate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">SGST (%)</Label>
+              <Input
+                className="h-8 text-xs"
+                type="number"
+                value={sgstRate}
+                onChange={(e) => setSgstRate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">IGST (%)</Label>
+              <Input
+                className="h-8 text-xs"
+                type="number"
+                value={igstRate}
+                onChange={(e) => setIgstRate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">GST + Grand total</Label>
+              <div className="h-8 flex items-center text-[11px] font-semibold">
+                ₹{gstAmount.toLocaleString("en-IN")} · ₹{grandTotal.toLocaleString("en-IN")}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full gap-1 text-xs font-bold text-primary hover:bg-primary/10 border-primary/30"
+        onClick={handleDownload}
+      >
+        <Download className="h-3.5 w-3.5" /> Tax Invoice PDF
+      </Button>
+    </div>
+  );
+}
+
 // Enterprise Customer 360 Workspace
 function Customer360Workspace({
   customer,
@@ -1278,6 +1470,12 @@ function Customer360Workspace({
     ) {
       try {
         await softDeleteLead(customer.id);
+        qc.invalidateQueries({ queryKey: ["leads"] });
+        qc.invalidateQueries({ queryKey: ["archived-leads"] });
+        qc.invalidateQueries({ queryKey: ["bookings"] });
+        qc.invalidateQueries({ queryKey: ["followups"] });
+        qc.invalidateQueries({ queryKey: ["calendar-events"] });
+        qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
         toast.success("Customer profile archived.");
         onClose();
       } catch (err: any) {
@@ -2977,7 +3175,7 @@ function Customer360Workspace({
                 {!activeOpp?.bookings || activeOpp.bookings.length === 0 ? (
                   <div className="max-w-xl p-4 border rounded-xl bg-card space-y-4">
                     <h3 className="font-bold text-xs uppercase tracking-wider text-primary flex items-center gap-1">
-                      <DollarSign className="h-4 w-4" /> Reserve Property Unit holding
+                      <IndianRupee className="h-4 w-4" /> Reserve Property Unit holding
                     </h3>
                     <p className="text-xs text-muted-foreground">
                       Locks inventory availability status from double sales blocks. Generates a
@@ -3108,7 +3306,21 @@ function Customer360Workspace({
                             </span>
                           </div>
 
+                          {role === "super_admin" && (
+                            <SuperAdminBookingInvoiceCms
+                              booking={booking}
+                              customer={customer}
+                              projectName={
+                                projects.find((p) => p.id === activeOpp?.projectId)?.name ||
+                                "BLX Premier Residence"
+                              }
+                              unitNumber={resolvedUnitNumber}
+                              invoiceSettings={invoiceSettings}
+                            />
+                          )}
+
                           <div className="flex gap-2 pt-2 flex-wrap">
+                            {role !== "super_admin" && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -3142,6 +3354,9 @@ function Customer360Workspace({
                                     unitNumber: resolvedUnitNumber,
                                     amount: booking.amount || 0,
                                     paymentStatus: booking.payment_status,
+                                    originalPrice: booking.amount || 0,
+                                    negotiatedPrice: booking.amount || 0,
+                                    commissionRate: invoiceSettings?.content?.commission_rate,
                                   },
                                   invoiceSettings,
                                 );
@@ -3149,6 +3364,7 @@ function Customer360Workspace({
                             >
                               <Download className="h-3.5 w-3.5" /> Tax Invoice PDF
                             </Button>
+                            )}
 
                             {isFullyPaid && (
                               <Button
@@ -3292,25 +3508,72 @@ function Customer360Workspace({
                       variant="outline"
                       className="gap-1.5 text-xs font-bold text-primary border-primary/30"
                       onClick={() => {
-                        const totalBilled = (activeOpp?.bookings || []).reduce(
-                          (sum: number, b: any) => sum + (b.amount || 0),
+                        const bookings = activeOpp?.bookings || [];
+                        const items = bookings.flatMap((b: any) => {
+                          const unit =
+                            allUnits.find((u) => u.id === b.unit_id)?.unit_number || "Allocation";
+                          const invoices = b.invoices || [];
+                          if (invoices.length > 0) {
+                            return invoices.map((inv: any) => {
+                              const snap = inv.snapshot || {};
+                              const billed =
+                                Number(inv.amount) ||
+                                Number(snap.negotiated_price) ||
+                                Number(snap.original_price) ||
+                                Number(b.amount) ||
+                                0;
+                              const paidFromPayments = (inv.payments || []).reduce(
+                                (sum: number, p: any) => sum + (Number(p.amount) || 0),
+                                0,
+                              );
+                              const paid =
+                                Number(inv.amount_paid) ||
+                                paidFromPayments ||
+                                (inv.status === "paid" ||
+                                inv.status === "completed" ||
+                                b.payment_status === "completed" ||
+                                b.payment_status === "paid"
+                                  ? billed
+                                  : 0);
+                              return {
+                                date:
+                                  inv.issued_at ||
+                                  inv.due_date ||
+                                  inv.dueDate ||
+                                  b.booking_date ||
+                                  new Date().toISOString(),
+                                reference:
+                                  inv.invoice_number ||
+                                  `#INV-${String(inv.id || "").slice(-6).toUpperCase()}`,
+                                description: `Tax invoice · Unit ${unit}`,
+                                debit: billed,
+                                credit: paid,
+                              };
+                            });
+                          }
+                          const billed = Number(b.amount ?? 0) || 0;
+                          return [
+                            {
+                              date: b.booking_date || new Date().toISOString(),
+                              reference: `#BK-${String(b.id || "").slice(-6).toUpperCase()}`,
+                              description: `Unit ${unit} Holding`,
+                              debit: billed,
+                              credit:
+                                b.payment_status === "completed" || b.payment_status === "paid"
+                                  ? billed
+                                  : 0,
+                            },
+                          ];
+                        });
+                        const totalBilled = items.reduce(
+                          (sum: number, it: any) => sum + (Number(it.debit) || 0),
                           0,
                         );
-                        const totalCollected = (activeOpp?.bookings || []).reduce(
-                          (sum: number, b: any) => {
-                            return sum + (b.payment_status === "completed" ? b.amount || 0 : 0);
-                          },
+                        const totalCollected = items.reduce(
+                          (sum: number, it: any) => sum + (Number(it.credit) || 0),
                           0,
                         );
                         const outstandingBalance = Math.max(0, totalBilled - totalCollected);
-
-                        const items = (activeOpp?.bookings || []).map((b: any) => ({
-                          date: b.booking_date || new Date().toISOString(),
-                          reference: `#BK-${b.id.slice(-6).toUpperCase()}`,
-                          description: `Unit ${allUnits.find((u) => u.id === b.unit_id)?.unit_number || "Allocation"} Holding`,
-                          debit: b.amount,
-                          credit: b.payment_status === "completed" ? b.amount : 0,
-                        }));
 
                         downloadCustomerStatementPdf(
                           {
@@ -3339,83 +3602,114 @@ function Customer360Workspace({
                       return (
                         <div
                           key={inv.id}
-                          className="p-4 border rounded-xl bg-card text-xs flex justify-between items-center shadow-sm"
+                          className="p-4 border rounded-xl bg-card text-xs space-y-3 shadow-sm"
                         >
-                          <div className="space-y-1">
-                            <div className="font-bold text-foreground flex items-center gap-2">
-                              <span>
-                                Invoice #
-                                {inv.id
-                                  .replace(/[^a-zA-Z0-9]/g, "")
-                                  .slice(-6)
-                                  .toUpperCase()}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground font-semibold">
-                                (Unit: {resolvedUnitNum})
-                              </span>
-                              <span
-                                className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase ${
-                                  inv.status === "paid"
-                                    ? "bg-emerald-500/10 text-emerald-500"
-                                    : "bg-amber-500/10 text-amber-500"
-                                }`}
-                              >
-                                {inv.status}
-                              </span>
-                            </div>
-                            <p className="text-muted-foreground">
-                              Due: {new Date(inv.dueDate).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-bold text-foreground text-sm">
-                              ₹{inv.amount.toLocaleString("en-IN")}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1.5 justify-end">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-[10px] gap-1 font-semibold"
-                                onClick={async () => {
-                                  try {
-                                    toast.loading("Generating PDF Tax Invoice...", {
-                                      id: "pdf-gen",
-                                    });
-                                    await downloadPdfInvoice({
-                                      bookingId: inv.booking_id,
-                                      leadId: customer.id,
-                                      customerName: customer.name,
-                                      customerPhone: customer.phone,
-                                      customerEmail: customer.email || undefined,
-                                      projectName: activeOpp?.projectId || "BLX Realty Project",
-                                      unitNumber: resolvedUnitNum,
-                                      amount: inv.amount,
-                                      paymentStatus: inv.status,
-                                      bookingDate: new Date().toISOString(),
-                                    });
-                                    toast.success("Official PDF Tax Invoice downloaded!", {
-                                      id: "pdf-gen",
-                                    });
-                                  } catch (err: any) {
-                                    toast.error(err.message || "Failed to generate PDF", {
-                                      id: "pdf-gen",
-                                    });
-                                  }
-                                }}
-                              >
-                                <FileText className="h-3 w-3" /> Download PDF
-                              </Button>
-                              {inv.status === "unpaid" && can(role).approveBookingRequest() && (
-                                <Button
-                                  size="sm"
-                                  className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                                  onClick={() => handleVerifyPayment(inv.booking_id)}
+                          <div className="flex justify-between items-center gap-3">
+                            <div className="space-y-1">
+                              <div className="font-bold text-foreground flex items-center gap-2">
+                                <span>
+                                  Invoice #
+                                  {inv.id
+                                    .replace(/[^a-zA-Z0-9]/g, "")
+                                    .slice(-6)
+                                    .toUpperCase()}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground font-semibold">
+                                  (Unit: {resolvedUnitNum})
+                                </span>
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase ${
+                                    inv.status === "paid"
+                                      ? "bg-emerald-500/10 text-emerald-500"
+                                      : "bg-amber-500/10 text-amber-500"
+                                  }`}
                                 >
-                                  Clear invoice
-                                </Button>
-                              )}
+                                  {inv.status}
+                                </span>
+                              </div>
+                              <p className="text-muted-foreground">
+                                Due: {new Date(inv.dueDate || inv.due_date).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-foreground text-sm">
+                                ₹{inv.amount.toLocaleString("en-IN")}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1.5 justify-end">
+                                {role !== "super_admin" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-[10px] gap-1 font-semibold"
+                                    onClick={async () => {
+                                      try {
+                                        toast.loading("Generating PDF Tax Invoice...", {
+                                          id: "pdf-gen",
+                                        });
+                                        await downloadPdfInvoice(
+                                          {
+                                            bookingId: inv.booking_id,
+                                            leadId: customer.id,
+                                            customerName: customer.name,
+                                            customerPhone: customer.phone,
+                                            customerEmail: customer.email || undefined,
+                                            projectName:
+                                              projects.find((p) => p.id === activeOpp?.projectId)
+                                                ?.name || "BLX Realty Project",
+                                            unitNumber: resolvedUnitNum,
+                                            amount: inv.amount,
+                                            paymentStatus: inv.status,
+                                            bookingDate: new Date().toISOString(),
+                                            customInvoiceNum: inv.invoice_number,
+                                            originalPrice: inv.snapshot?.original_price,
+                                            negotiatedPrice: inv.snapshot?.negotiated_price,
+                                            commissionRate: inv.snapshot?.commission_rate,
+                                          },
+                                          invoiceSettings,
+                                        );
+                                        toast.success("Official PDF Tax Invoice downloaded!", {
+                                          id: "pdf-gen",
+                                        });
+                                      } catch (err: any) {
+                                        toast.error(err.message || "Failed to generate PDF", {
+                                          id: "pdf-gen",
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    <FileText className="h-3 w-3" /> Download PDF
+                                  </Button>
+                                )}
+                                {inv.status === "unpaid" && can(role).approveBookingRequest() && (
+                                  <Button
+                                    size="sm"
+                                    className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                                    onClick={() => handleVerifyPayment(inv.booking_id)}
+                                  >
+                                    Clear invoice
+                                  </Button>
+                                )}
+                              </div>
                             </div>
                           </div>
+                          {role === "super_admin" && (
+                            <SuperAdminBookingInvoiceCms
+                              booking={{
+                                id: inv.booking_id,
+                                amount: inv.amount,
+                                payment_status: inv.status,
+                                invoice_number: inv.invoice_number,
+                                snapshot: inv.snapshot,
+                              }}
+                              customer={customer}
+                              projectName={
+                                projects.find((p) => p.id === activeOpp?.projectId)?.name ||
+                                "BLX Realty Project"
+                              }
+                              unitNumber={resolvedUnitNum}
+                              invoiceSettings={invoiceSettings}
+                            />
+                          )}
                         </div>
                       );
                     })}

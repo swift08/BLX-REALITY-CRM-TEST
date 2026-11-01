@@ -2241,7 +2241,16 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ success: true });
       }
       case "createBookingInvoice": {
-        const { bookingId, dueDate, snapshot } = payload;
+        const {
+          bookingId,
+          dueDate,
+          snapshot,
+          invoiceNumber,
+          amount: amountOverride,
+          originalPrice,
+          negotiatedPrice,
+          commissionRate,
+        } = payload;
         if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
 
         const { data: booking, error: bErr } = await supabase
@@ -2252,8 +2261,41 @@ export default async function handler(req: any, res: any) {
 
         if (bErr || !booking) return res.status(400).json({ error: "Booking record not found." });
 
-        const invNum = `INV-2026-${Math.floor(1000 + Math.random() * 9000)}/BLX`;
-        const amount = booking.amount || 0;
+        let numbering = {
+          prefix: "INV-2026-",
+          suffix: "/BLX",
+          start_sequence: 1001,
+          padding: 4,
+          auto_increment: true,
+        };
+        try {
+          const { data: cms } = await supabase
+            .from("invoice_settings")
+            .select("numbering")
+            .eq("id", "inv_settings_default")
+            .maybeSingle();
+          if (cms?.numbering) numbering = { ...numbering, ...cms.numbering };
+        } catch (_) {
+          /* defaults */
+        }
+        const seq = Number(numbering.start_sequence) || 1001;
+        const pad = Number(numbering.padding) || 4;
+        const invNum =
+          (invoiceNumber && String(invoiceNumber).trim()) ||
+          `${numbering.prefix || "INV-2026-"}${String(seq).padStart(pad, "0")}${numbering.suffix || "/BLX"}`;
+        const amount =
+          amountOverride != null && amountOverride !== ""
+            ? Number(amountOverride)
+            : booking.amount || 0;
+
+        const storedSnapshot = {
+          ...(snapshot || {}),
+          invoice_number: invNum,
+          amount,
+          original_price: originalPrice ?? snapshot?.original_price,
+          negotiated_price: negotiatedPrice ?? snapshot?.negotiated_price,
+          commission_rate: commissionRate ?? snapshot?.commission_rate,
+        };
 
         const { data: existingInv } = await supabase
           .from("invoices")
@@ -2287,7 +2329,7 @@ export default async function handler(req: any, res: any) {
                 due_date: dueDate || new Date(Date.now() + 15 * 86400000).toISOString(),
                 issued_at: new Date().toISOString(),
                 issued_by: actorName,
-                snapshot: snapshot || null,
+                snapshot: storedSnapshot,
               })
               .eq("id", existingInv.id)
               .select()
@@ -2321,7 +2363,7 @@ export default async function handler(req: any, res: any) {
                 due_date: dueDate || new Date(Date.now() + 15 * 86400000).toISOString(),
                 issued_at: new Date().toISOString(),
                 issued_by: actorName,
-                snapshot: snapshot || null,
+                snapshot: storedSnapshot,
               })
               .select()
               .single();
@@ -2344,6 +2386,25 @@ export default async function handler(req: any, res: any) {
           }
         } catch (err: any) {
           invData = { id: `inv-${Date.now()}`, invoice_number: invNum, status: "issued", amount };
+        }
+
+        if (amountOverride != null && Number(amountOverride) !== Number(booking.amount)) {
+          try {
+            await supabase.from("bookings").update({ amount }).eq("id", bookingId);
+          } catch (_) {
+            /* best-effort amount sync */
+          }
+        }
+
+        if (numbering.auto_increment !== false) {
+          try {
+            await supabase
+              .from("invoice_settings")
+              .update({ numbering: { ...numbering, start_sequence: seq + 1 } })
+              .eq("id", "inv_settings_default");
+          } catch (_) {
+            /* best-effort sequence bump */
+          }
         }
 
         // LOCK THE BOOKING to prevent unauthorized modifications
@@ -3809,6 +3870,33 @@ export default async function handler(req: any, res: any) {
               qr_instructions:
                 "Scan UPI QR code using any UPI Banking App to complete instant token transfer.",
             },
+            content: {
+              document_title: "TAX INVOICE",
+              billed_to_label: "BILLED TO (CLIENT DETAILS)",
+              property_label: "PROPERTY ALLOCATION DETAILS",
+              line_item_title: "Unit Hold Reservation Fee / Initial Token Advance",
+              line_item_subtitle: "Unit No. {unit} in {project}",
+              line_item_category: "Booking Advance",
+              status_badge: "PAID & CONFIRMED",
+              total_label: "TOTAL AMOUNT PAID",
+              bank_section_label: "OFFICIAL BANK & ESCROW ACCOUNT DETAILS",
+              terms_label: "TERMS & CONDITIONS",
+              show_commission: true,
+              commission_rate: 2,
+              commission_label: "Brokerage / Commission",
+              show_negotiated_price: true,
+              original_price_label: "Original List Price",
+              negotiated_price_label: "Price After Negotiation",
+              sample_invoice_number: "INV-2026-1001/BLX",
+              sample_amount: 500000,
+              sample_original_price: 550000,
+              sample_negotiated_price: 500000,
+              sample_customer_name: "Ananya Sharma",
+              sample_customer_phone: "+91 98450 12345",
+              sample_customer_email: "ananya.sharma@example.com",
+              sample_project_name: "BLX Platinum Heights, Indiranagar",
+              sample_unit_number: "A-1402 (3BHK Luxury)",
+            },
             default_template_id: "modern_executive",
           };
 
@@ -3822,21 +3910,45 @@ export default async function handler(req: any, res: any) {
             return res.status(200).json(defaultSettings);
           }
 
+          const notesIn = data.invoice_notes || {};
+          const nestedContent = notesIn.content || {};
+          const { content: _nested, ...notesRest } = notesIn;
+
           const mergedSettings = {
             ...defaultSettings,
             ...data,
             company_info: {
               ...defaultSettings.company_info,
               ...(data.company_info || {}),
-              company_name: "BLX REALITY PRIVATE LIMITED",
-              registered_address:
-                "#301D, 3rd Floor, Tower B, Brigade Twin Towers, Pipeline Road HMT, Yeswanthpur, Bengaluru, Karnataka 560022",
-              phone: "+91-9743264328 / +44-7944450039 / +91-8197773166",
-              email: "discoverblr@theblxrealty.com",
-              website: "www.theblxrealty.com",
-              gst_number: "29AAOCB0144P1Z7",
-              pan_number: "AAOCB0144P",
-              cin: "U68100KA2025PTC209397",
+            },
+            banking_details: {
+              ...defaultSettings.banking_details,
+              ...(data.banking_details || {}),
+            },
+            tax_statutory: {
+              ...defaultSettings.tax_statutory,
+              ...(data.tax_statutory || {}),
+            },
+            invoice_notes: {
+              ...defaultSettings.invoice_notes,
+              ...notesRest,
+            },
+            branding: {
+              ...defaultSettings.branding,
+              ...(data.branding || {}),
+            },
+            numbering: {
+              ...defaultSettings.numbering,
+              ...(data.numbering || {}),
+            },
+            payment_info: {
+              ...defaultSettings.payment_info,
+              ...(data.payment_info || {}),
+            },
+            content: {
+              ...defaultSettings.content,
+              ...nestedContent,
+              ...(data.content || {}),
             },
           };
           return res.status(200).json(mergedSettings);
@@ -3848,9 +3960,14 @@ export default async function handler(req: any, res: any) {
       case "updateInvoiceSettings": {
         const { settings, sectionName } = payload;
         const now = new Date().toISOString();
+        const { content, ...rest } = settings || {};
         const updatedObj = {
-          ...settings,
+          ...rest,
           id: "inv_settings_default",
+          invoice_notes: {
+            ...(rest.invoice_notes || {}),
+            content: content || {},
+          },
           updated_at: now,
           updated_by: actorName,
         };
